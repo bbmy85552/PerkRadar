@@ -91,9 +91,9 @@ export default function DemoPage() {
           <header className="pr-header">
             <div className="pr-header-row">
               <h1 className="pr-title">{view === "feed" ? "PerkRadar" : view === "me" ? "我的" : "关于"}</h1>
-              <a className="pr-icon-btn" href="/" aria-label="返回正式站" title="返回正式站">
+              <Link className="pr-icon-btn" href="/" aria-label="返回正式站" title="返回正式站">
                 <ArrowUpRight aria-hidden="true" />
-              </a>
+              </Link>
               {view === "feed" ? (
                 <button type="button" className="pr-icon-btn" aria-label="打开筛选" aria-expanded={filterOpen} onClick={() => setFilterOpen(true)}>
                   <SlidersHorizontal aria-hidden="true" />
@@ -145,8 +145,8 @@ export default function DemoPage() {
             {view === "me" ? (
               <>
                 <div className="pr-me-tabs" role="tablist">
-                  <button type="button" className="pr-seg" aria-selected={meTab === "favorites"} onClick={() => setMeTab("favorites")}>收藏 {favoriteDeals.length}</button>
-                  <button type="button" className="pr-seg" aria-selected={meTab === "claimed"} onClick={() => setMeTab("claimed")}>已领 {claimedDeals.length}</button>
+                  <button type="button" className="pr-seg" role="tab" aria-selected={meTab === "favorites"} onClick={() => setMeTab("favorites")}>收藏 {favoriteDeals.length}</button>
+                  <button type="button" className="pr-seg" role="tab" aria-selected={meTab === "claimed"} onClick={() => setMeTab("claimed")}>已领 {claimedDeals.length}</button>
                 </div>
                 <section className="pr-cards" data-columns="true">
                   {list.map((deal) => (
