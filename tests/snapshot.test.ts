@@ -76,7 +76,7 @@ describe("public snapshot", () => {
   });
 
   it("writes latest.json from a completed SYNTHETIC refresh", async () => {
-    useMemoryDb();
+    await useMemoryDb();
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "deals-snapshot-"));
     process.env.DEALS_SNAPSHOT_DIR = directory;
     try {

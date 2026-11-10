@@ -20,12 +20,12 @@ function asCategory(value: string): Category {
   return CATEGORIES.includes(value as Category) ? (value as Category) : "其他";
 }
 
-export function getBoardState(now = Date.now()): BoardState {
-  recoverDanglingRounds(now);
-  const round = latestFinishedRound();
-  const runs = round ? listSourceRuns(round.id) : [];
+export async function getBoardState(now = Date.now()): Promise<BoardState> {
+  await recoverDanglingRounds(now);
+  const round = await latestFinishedRound();
+  const runs = round ? await listSourceRuns(round.id) : [];
   const runBySource = new Map(runs.map((run) => [run.sourceId, run]));
-  const active = listDeals().filter(
+  const active = (await listDeals()).filter(
     (deal) =>
       !isStale(
         {
@@ -58,29 +58,31 @@ export function getBoardState(now = Date.now()): BoardState {
   }));
 
   const qualityBySource = new Map(
-    SOURCE_DEFS.map((source) => {
-      const recent = recentSourceRuns(source.id, 8);
-      let consecutiveFailures = 0;
-      for (const run of recent) {
-        if (run.ok) break;
-        consecutiveFailures += 1;
-      }
-      const current = recent[0];
-      const previous = recent[1];
-      const countDrop = Boolean(
-        current && current.ok && previous && previous.ok && previous.fetchedCount > 0 && current.fetchedCount <= previous.fetchedCount / 2,
-      );
-      const structureAnomaly = Boolean(
-        current &&
-          !current.ok &&
-          /未能解析|商品列表|网页而不是订阅源|不是 JSON|LINUX DO 福利列表|Markdown 解析出条目/.test(current.error ?? ""),
-      );
-      const warnings: string[] = [];
-      if (consecutiveFailures >= 3) warnings.push(`连续失败 ${consecutiveFailures} 轮`);
-      if (countDrop) warnings.push(`解析条数骤降至 ${current!.fetchedCount}`);
-      if (structureAnomaly) warnings.push("解析结构异常");
-      return [source.id, { consecutiveFailures, countDrop, structureAnomaly, warning: warnings.length ? warnings.join("；") : null }] as const;
-    }),
+    await Promise.all(
+      SOURCE_DEFS.map(async (source) => {
+        const recent = await recentSourceRuns(source.id, 8);
+        let consecutiveFailures = 0;
+        for (const run of recent) {
+          if (run.ok) break;
+          consecutiveFailures += 1;
+        }
+        const current = recent[0];
+        const previous = recent[1];
+        const countDrop = Boolean(
+          current && current.ok && previous && previous.ok && previous.fetchedCount > 0 && current.fetchedCount <= previous.fetchedCount / 2,
+        );
+        const structureAnomaly = Boolean(
+          current &&
+            !current.ok &&
+            /未能解析|商品列表|网页而不是订阅源|不是 JSON|LINUX DO 福利列表|Markdown 解析出条目/.test(current.error ?? ""),
+        );
+        const warnings: string[] = [];
+        if (consecutiveFailures >= 3) warnings.push(`连续失败 ${consecutiveFailures} 轮`);
+        if (countDrop) warnings.push(`解析条数骤降至 ${current!.fetchedCount}`);
+        if (structureAnomaly) warnings.push("解析结构异常");
+        return [source.id, { consecutiveFailures, countDrop, structureAnomaly, warning: warnings.length ? warnings.join("；") : null }] as const;
+      }),
+    ),
   );
 
   const sources: SourceStatus[] = SOURCE_DEFS.map((source) => {
@@ -107,7 +109,7 @@ export function getBoardState(now = Date.now()): BoardState {
     }));
 
   const ok = sources.filter((source) => source.lastOk === true).length;
-  const nextRaw = getMeta("next_refresh_at");
+  const nextRaw = await getMeta("next_refresh_at");
   const nextRefreshAt = nextRaw ? Number(nextRaw) : null;
   const lastUpdatedAt = round?.finishedAt ?? null;
 
@@ -124,7 +126,7 @@ export function getBoardState(now = Date.now()): BoardState {
   }
   if (round?.status === "failed") anomalies.push("上一轮所有来源都失败");
 
-  const previous = round ? previousSourceRuns(round.id) : [];
+  const previous = round ? await previousSourceRuns(round.id) : [];
   const previousBySource = new Map(previous.map((run) => [run.sourceId, run]));
   for (const source of sources) {
     const before = previousBySource.get(source.id);

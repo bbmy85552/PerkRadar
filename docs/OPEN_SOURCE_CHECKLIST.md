@@ -19,14 +19,14 @@
 对外文字用 `PerkRadar`；下列运行标识保持不变，避免改名导致本机状态丢失：
 
 - Compose 项目名 `daily-free-info`、容器名、镜像 tag `daily-free-info:local`、命令里的 `-p daily-free-info`；
-- 卷 `./data`、`deals.db` 及 WAL/SHM 文件、SQLite 表名与列名、`SOURCE_DEFS` 的 id、端口 38471；
+- PostgreSQL 表名与列名、`SOURCE_DEFS` 的 id、端口 38471、`DATABASE_URL` / `CRON_SECRET` 环境变量名；
 - 浏览器 `localStorage` 键 `daily-deals-personal-v1` 与 `{ claimed, favorites }` JSON 形状。
 
 判据：改 Compose 项目名会新建一套容器与网络，改收藏键或表结构会让用户本机收藏、已领与现有库不兼容。品牌改名不构成迁移这些状态的理由。
 
 ## 3. 许可与第三方声明
 
-当前齐全：`LICENSE`（MIT）全文、`package.json` 的 `license` 字段、README 许可段落、[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)（生产依赖逐项列名称、版本、许可证、上游地址；开发依赖单列「仅构建期，不随镜像分发」）。`node:sqlite` 是 Node 内置模块，不单独引入第三方许可。
+当前齐全：`LICENSE`（MIT）全文、`package.json` 的 `license` 字段、README 许可段落、[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)（生产依赖逐项列名称、版本、许可证、上游地址；开发依赖单列「仅构建期，不随镜像分发」）。
 
 判据：README、`package.json`、`LICENSE` 三处口径一致；`THIRD_PARTY_NOTICES.md` 与 `package-lock.json` 的生产依赖对得上。内容来自第三方站点，其使用条件不受本仓库代码许可覆盖。
 
@@ -42,7 +42,7 @@
 
 ## 5. 对外说明与文档
 
-README 首屏明确：定位是「多来源优惠线索聚合」，不是逐条认证的领取平台；条目只代表 feed 里有这条，不代表活动仍有效、条件已核实或账户里真有额度。并写明 7 个来源及其形态、关键词分类会误判、闲聊 / 求购 / 抽奖 / 推广照常收录但「其他」在正式页默认隐藏、除 Epic 的当前免费促销外 `expires_at` 为空、进程内 2 小时调度会漏轮、`ok: true` 只证明能读库、默认 loopback、上传 GitHub ≠ 已部署。
+README 首屏明确：定位是「多来源优惠线索聚合」，不是逐条认证的领取平台；条目只代表 feed 里有这条，不代表活动仍有效、条件已核实或账户里真有额度。并写明 7 个来源及其形态、关键词分类会误判、闲聊 / 求购 / 抽奖 / 推广照常收录但「其他」在正式页默认隐藏、除 Epic 的当前免费促销外 `expires_at` 为空、默认不在进程内调度而由外部每 2 小时触发、错过的轮次不会补抓、`ok: true` 只证明能读库、默认 loopback、上传 GitHub ≠ 已部署。
 
 界面文案：顶部只有品牌和「立即刷新」；搜索、排序、来源、分类、收藏、运行状态与逐源结果在左侧状态区和提示区；「信息列表」标题行右侧是「查看全部线索」与「只看新增」两个开关，并显示可见条数与「已隐藏 N 条「其他」线索」；卡片只保留标题、收藏文字按钮、摘要框、原文信息、标签、「打开原文」与「标记已领」。浅色底、`RGB(20,148,130)` 小面积强调，未实现深色模式，系统字体、不加载外部字体或 CDN；正式页与本地 dev 预览 `/demo` 共用 `src/components/deal-board.css`，`/demo` 是 7 条示例的设计预览（1 条「其他」默认隐藏，「只看新增」仍为 3 条），生产镜像的构建结果只有 `/`、`/_not-found` 和三个 API，不含 `/demo`。页面持续可见地说明条目来自公开订阅源、只是线索、未核实有效性 / 条件 / 能否领取。客户端 `src/lib/board-view.ts` 校验接口响应与 SSR 快照；本地状态写入失败、轮询失败、空库、筛选为空，以及刷新 429 / 断网 / 畸形响应各有区分提示。
 
@@ -57,7 +57,7 @@ README 首屏明确：定位是「多来源优惠线索聚合」，不是逐条�
 ## 6. 持续集成与依赖审计
 
 - `.github/workflows/ci.yml`：固定 Node 22 → `npm ci` → `npm test` → `npm run lint` → `npm run build` → `npm audit --omit=dev --registry=https://registry.npmjs.org`。
-- `.github/workflows/live-sources.yml`：`workflow_dispatch` + `schedule`（cron 用 UTC，`23 4 * * *` 即北京时间 12:23），单独运行、写临时 `DATA_DIR`、设 `DISABLE_SCHEDULER=1`，不进入 PR 必过项。
+- `.github/workflows/live-sources.yml`：`workflow_dispatch` + `schedule`（cron 用 UTC，`23 4 * * *` 即北京时间 12:23），单独运行，写入 GitHub Actions 里的临时 Postgres 服务，不进入 PR 必过项。
 - 两个 workflow 都声明 `permissions: contents: read`。
 - `package.json` 声明 `engines.node >=22`，`.nvmrc` 为 22。Next 仍锁 15.5.29、ESLint 仍 9，没有升级大版本。
 
@@ -86,7 +86,7 @@ README 首屏明确：定位是「多来源优惠线索聚合」，不是逐条�
 ## 9. 默认安全与部署边界
 
 - 端口绑定只有 `127.0.0.1:${HOST_PORT:-38471}:38471`，不改 `0.0.0.0`。容器非 root，`./data` 须对 uid 1000 可写，不用 `chmod 777` 绕过。
-- `POST /api/refresh` **没有身份校验**，只依赖同源校验（`sec-fetch-site: cross-site` 拒绝 403、`Origin` 与 `Host` 不一致拒绝 403；不带 `Origin` 的请求放行）、60 秒冷却、每 IP 10 分钟 8 次内存限流（重启清零）、`Content-Length` 上限、单源 25 秒超时与响应体大小上限。
+- `POST /api/refresh` 与 `GET /api/refresh`：配置 `CRON_SECRET` / `REFRESH_SECRET` 后，外部请求必须带 `Authorization: Bearer` 或 `X-Cron-Secret` / `X-Refresh-Secret`，否则 401；同源页面手动刷新仍可用。另有同源校验、60 秒手动冷却、每 IP 10 分钟 8 次内存限流（重启清零）、`Content-Length` 上限、单源 25 秒超时与响应体大小上限。未配置密钥时不要把接口暴露到公网。
 - 客户端 IP 默认忽略 `x-forwarded-for` / `x-real-ip`（一律归 `local`），只有 `TRUST_PROXY_HEADERS=1` 时才信任转发头；只在确有可信反向代理时开启。三个接口都带 `cache-control: no-store`。
 
 判据：把现有端口直接暴露到公网等于开放一个可随意触发外链抓取的接口；如需公网访问，须另行设计认证、TLS、刷新接口鉴权与全局速率限制。详见 [SECURITY.md](../SECURITY.md)。

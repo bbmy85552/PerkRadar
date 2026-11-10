@@ -125,7 +125,7 @@ function fetchFrom(map: Record<string, string>, fail: string[] = []): FetchLike 
 
 describe("refresh", { concurrency: false }, () => {
   it("dedupes URLs, drops items outside 7 days, marks only this round as new, and classifies", async () => {
-    useMemoryDb();
+    await useMemoryDb();
     const board = await runRefresh({
       trigger: "schedule",
       now: NOW,
@@ -186,16 +186,16 @@ describe("refresh", { concurrency: false }, () => {
   });
 
   it("keeps a failed source's metadata and still records the failure", async () => {
-    useMemoryDb();
+    await useMemoryDb();
     await runRefresh({ trigger: "schedule", now: NOW, fetchImpl: fetchFrom(bodies()) });
-    const before = listDeals().find((deal) => deal.sourceId === "v2ex");
+    const before = (await listDeals()).find((deal) => deal.sourceId === "v2ex");
     assert.ok(before);
     const after = await runRefresh({
       trigger: "schedule",
       now: NOW + 120_000,
       fetchImpl: fetchFrom(bodies(), ["v2ex"]),
     });
-    const deal = listDeals().find((row) => row.id === before!.id);
+    const deal = (await listDeals()).find((row) => row.id === before!.id);
     assert.equal(deal?.title, before!.title);
     assert.equal(deal?.summary, before!.summary);
     assert.equal(deal?.publishedAt, before!.publishedAt);
@@ -209,7 +209,7 @@ describe("refresh", { concurrency: false }, () => {
   });
 
   it("removes an Epic game that is no longer free without touching a failed Epic round", async () => {
-    useMemoryDb();
+    await useMemoryDb();
     await runRefresh({ trigger: "schedule", now: NOW, fetchImpl: fetchFrom(bodies()) });
     const removed = await runRefresh({
       trigger: "schedule",
@@ -233,9 +233,9 @@ describe("refresh", { concurrency: false }, () => {
   });
 
   it("treats an empty Epic catalog as a failed source and keeps stored rows", async () => {
-    useMemoryDb();
+    await useMemoryDb();
     await runRefresh({ trigger: "schedule", now: NOW, fetchImpl: fetchFrom(bodies()) });
-    assert.equal(listDeals().filter((deal) => deal.sourceId === "epic").length, 1);
+    assert.equal((await listDeals()).filter((deal) => deal.sourceId === "epic").length, 1);
     const board = await runRefresh({
       trigger: "schedule",
       now: NOW + 60_000,
@@ -246,7 +246,7 @@ describe("refresh", { concurrency: false }, () => {
   });
 
   it("rejects overlapping refresh and manual cooldown, while a schedule may follow", async () => {
-    useMemoryDb();
+    await useMemoryDb();
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -284,9 +284,9 @@ describe("refresh", { concurrency: false }, () => {
   });
 
   it("records a timeout without deleting deals gathered earlier", async () => {
-    useMemoryDb();
+    await useMemoryDb();
     await runRefresh({ trigger: "schedule", now: NOW, fetchImpl: fetchFrom(bodies()) });
-    const before = listDeals().length;
+    const before = (await listDeals()).length;
     const hanging: FetchLike = (_input, init) =>
       new Promise((_resolve, reject) => {
         const signal = init?.signal;
@@ -301,7 +301,7 @@ describe("refresh", { concurrency: false }, () => {
       timeoutMs: 30,
       fetchImpl: hanging,
     });
-    assert.equal(listDeals().length, before);
+    assert.equal((await listDeals()).length, before);
     assert.equal(board.roundStatus, "failed");
     assert.equal(board.failures.length, 7);
     assert.ok(board.failures.every((failure) => failure.error === "超时"));

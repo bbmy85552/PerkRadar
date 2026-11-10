@@ -2,13 +2,13 @@
 
 ## 本地准备
 
-- Node.js 22（`node:sqlite` 是 Node 22 的实验 API）与 npm 10。`package.json` 声明 `engines.node >=22`，`.nvmrc` 为 22，CI 两个 workflow 固定 Node 22。
+- Node.js 20 或更高版本（CI 与 Docker 镜像使用 Node.js 22）与 npm 10。`package.json` 声明 `engines.node >=20`，`.nvmrc` 为 22。本机开发需要 `DATABASE_URL`；`npm test` 使用 PGlite，不连接真实数据库。
 - `npm ci`，然后按 `npm test` → `npm run lint` → `npx --no-install tsc --noEmit` → `npm run build` 验收，详见 [.mrdayone/verify.md](.mrdayone/verify.md)。测试项数以 `npm test` 输出为准，不写进文档或注释。
 - 本机 Docker 启停见 [docs/OPERATIONS.md](docs/OPERATIONS.md)；默认只监听 `127.0.0.1:38471`。
 
 ## 测试约定
 
-- `npm test` 只用 `tests/fixtures/` 的固定样本与 `tests/helpers.ts` 的 `SYNTHETIC` 生成器：**不访问外网**、不写 `./data`。
+- `npm test` 只用 `tests/fixtures/` 的固定样本与 `tests/helpers.ts` 的 `SYNTHETIC` 生成器：**不访问外网**、不写生产数据库。
 - 每个固定样本必须在 `tests/fixtures/README.md` 注明来源 URL、采集时间（未记录就写「未记录」，不要编造）与脱敏说明。
 - 能表达同样解析形状时优先用合成样本，不要继续转载第三方正文；测试夹具不进生产镜像（`.dockerignore` 排除 `tests/`）。
 - 实时源检查单独运行（`.github/workflows/live-sources.yml`），不是 PR 必过项，避免上游波动拖垮所有检查。
@@ -37,4 +37,4 @@
 
 ## 不可退让
 
-不把没抓到的写成抓到、不把测试夹具写进 `./data`、不把闲聊或抽奖说成已核实可领、不改数据库表结构与 `daily-deals-personal-v1` 的形状、不删除用户数据、不把现有端口直接暴露到公网。`TRUST_PROXY_HEADERS=1` 只在确有可信反向代理时开启。结构化日志不写标题正文、Cookie、请求头或个人状态。没跑过的检查不要写成已通过。
+不把没抓到的写成抓到、不把测试夹具写进生产数据库、不把闲聊或抽奖说成已核实可领、不改数据库表结构与 `daily-deals-personal-v1` 的形状、不删除用户数据、不把未加刷新密钥的接口直接暴露到公网。`TRUST_PROXY_HEADERS=1` 只在确有可信反向代理时开启。结构化日志不写标题正文、Cookie、请求头或个人状态。没跑过的检查不要写成已通过。

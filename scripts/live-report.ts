@@ -1,3 +1,11 @@
+if (typeof process.loadEnvFile === "function") {
+  try {
+    process.loadEnvFile(".env");
+  } catch {
+    // A missing local .env is fine; DATABASE_URL may already be in the environment.
+  }
+}
+
 import fs from "node:fs";
 import path from "node:path";
 import { runRefresh } from "../src/lib/refresh";

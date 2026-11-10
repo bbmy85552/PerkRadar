@@ -27,6 +27,8 @@ jobs:
         run: npm ci
       - name: Unit tests (offline fixtures only)
         run: npm test
+      - name: Typecheck
+        run: npm run typecheck
       - name: Lint
         run: npm run lint
       - name: Production build

@@ -17,9 +17,11 @@ services:
     environment:
       NODE_ENV: production
       PORT: "38471"
-      DATA_DIR: /data
-    volumes:
-      - ./data:/data
+      DATABASE_URL: ${DATABASE_URL}
+      CRON_SECRET: ${CRON_SECRET:-}
+      REFRESH_SECRET: ${REFRESH_SECRET:-}
+      # The in-process scheduler stays off unless ENABLE_SCHEDULER=1 is set.
+      # Do not enable it for this Compose default; trigger refresh externally.
     healthcheck:
       test:
         - CMD

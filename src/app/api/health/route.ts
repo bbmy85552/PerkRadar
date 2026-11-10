@@ -6,9 +6,9 @@ import { logFailure } from "@/lib/log";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export function GET() {
+export async function GET() {
   try {
-    const report = toHealthReport(getBoardState());
+    const report = toHealthReport(await getBoardState());
     return NextResponse.json(report, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     logFailure("health_check_failed", error);

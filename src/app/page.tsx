@@ -4,7 +4,7 @@ import { getBoardState } from "@/lib/board";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export default function HomePage() {
-  const board = getBoardState();
+export default async function HomePage() {
+  const board = await getBoardState();
   return <DealBoard initial={board} />;
 }

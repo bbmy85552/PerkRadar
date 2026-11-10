@@ -1,9 +1,16 @@
-import { openDatabase, useDatabase } from "../src/lib/db";
+import { PGlite } from "@electric-sql/pglite";
+import { migrateSchema, setActiveDatabase, wrapEmbeddedPostgres } from "../src/lib/db";
 import { resetGuards } from "../src/lib/guard";
 import { resetRefreshLockForTests } from "../src/lib/refresh-lock";
 
-export function useMemoryDb(): void {
-  useDatabase(openDatabase(":memory:"));
+export async function useMemoryDb(): Promise<void> {
+  const embedded = new PGlite();
+  const db = wrapEmbeddedPostgres({
+    query: (text, params) => embedded.query(text, params),
+    close: () => embedded.close(),
+  });
+  await migrateSchema(db);
+  await setActiveDatabase(db);
   resetRefreshLockForTests();
   resetGuards();
   process.env.DEALS_SNAPSHOT_DIR = "off";

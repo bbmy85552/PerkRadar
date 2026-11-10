@@ -15,6 +15,7 @@ function globals(): SchedulerGlobal {
 }
 
 export function shouldStartScheduler(): boolean {
+  if (process.env.ENABLE_SCHEDULER !== "1") return false;
   if (process.env.DISABLE_SCHEDULER === "1") return false;
   if (process.env.NEXT_PHASE === "phase-production-build") return false;
   if (process.env.npm_lifecycle_event === "build") return false;
@@ -34,8 +35,10 @@ async function runScheduled(run: (options: RefreshOptions) => Promise<BoardState
 }
 
 /**
- * In-process scheduler for one long-running Node server.
- * The first round starts shortly after boot, then every two hours.
+ * Optional in-process scheduler for one long-running Node server.
+ * It stays off unless ENABLE_SCHEDULER=1 is set. Production Docker and
+ * Vercel must not enable it; refresh is triggered by an external HTTP call.
+ * When enabled, the first round starts shortly after boot, then every two hours.
  * Dev hot reload is guarded with globalThis so the interval is not duplicated.
  */
 export function startScheduler(options?: {
@@ -55,11 +58,11 @@ export function startScheduler(options?: {
   const arm = () => {
     g.__dealsScheduler = setInterval(() => {
       const nextAt = Date.now() + intervalMs;
-      setMeta("next_refresh_at", String(nextAt));
+      void setMeta("next_refresh_at", String(nextAt));
       void runScheduled(run);
     }, intervalMs);
     g.__dealsScheduler.unref?.();
-    setMeta("next_refresh_at", String(Date.now() + intervalMs));
+    void setMeta("next_refresh_at", String(Date.now() + intervalMs));
   };
 
   if (skipBoot) {
@@ -70,7 +73,7 @@ export function startScheduler(options?: {
     void runScheduled(run).finally(arm);
   }, bootDelayMs);
   g.__dealsBoot.unref?.();
-  setMeta("next_refresh_at", String(Date.now() + bootDelayMs));
+  void setMeta("next_refresh_at", String(Date.now() + bootDelayMs));
 }
 
 export function stopSchedulerForTests(): void {

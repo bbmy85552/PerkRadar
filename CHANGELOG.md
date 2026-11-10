@@ -6,6 +6,13 @@
 
 以下内容描述当前源码行为；**尚未发版**（无新 tag、无新 Release）。
 
+### PostgreSQL 与外部刷新（2026-11-10）
+
+- 存储从 SQLite / `node:sqlite` 改为 PostgreSQL（`pg`），通过 `DATABASE_URL` 连接；启动时自动 `CREATE TABLE IF NOT EXISTS`。离线测试改用 PGlite，不再要求 Node 22 的实验 SQLite API；`engines.node` 调整为 `>=20`。
+- 进程内调度器默认关闭。刷新改由外部 HTTP 请求触发；可选用 `CRON_SECRET` 或 `REFRESH_SECRET`，通过 `Authorization: Bearer` 或 `X-Cron-Secret` / `X-Refresh-Secret` 调用 `POST` / `GET /api/refresh`。配置密钥后，未认证的公网刷新返回 401。同源页面手动刷新仍然可用。
+- 增加 `vercel.json` 每 2 小时 Cron 示例，但默认不部署。Compose 改为注入 `DATABASE_URL` 与密钥，不再挂载 SQLite 数据卷。
+- 文档、`.env.example` 与 live-sources 工作流已同步；备份改用 `pg_dump`。
+
 ### 界面重构与数据校验（2026-11-09）
 
 - 界面：正式首页按 `/demo` 的布局重构——顶部只保留品牌与「立即刷新」，搜索、排序、来源、分类、收藏、运行状态与逐源结果移到左侧状态区和提示区，「只看新增」放在「信息列表」标题行右侧；卡片只保留标题、收藏文字按钮、摘要框、原文信息、标签、「打开原文」与「标记已领」。浅色底、`RGB(20,148,130)` 小面积强调，未实现深色模式，使用系统字体、不加载外部字体或 CDN。
