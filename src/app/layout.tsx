@@ -11,13 +11,21 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#f7f8fa",
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F5F5F7" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+  ],
+  colorScheme: "light",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="zh-CN" suppressHydrationWarning>
-      <body className="min-h-dvh bg-[#f7f8fa] font-sans text-[#292d34] antialiased" suppressHydrationWarning>{children}</body>
+      <body className="min-h-dvh bg-[#F5F5F7] font-sans text-[#1D1D1F] antialiased" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }

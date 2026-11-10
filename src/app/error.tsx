@@ -4,7 +4,7 @@ import "../components/deal-board.css";
 
 export default function ErrorPage({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
-    <div className="perk-board" data-testid="error">
+    <div className="perk-board pr-app" data-testid="error">
       <div className="board-error">
         <div className="board-error-card" role="alert">
           <h1>暂时读不到优惠</h1>
