@@ -1,8 +1,14 @@
 {
+  "regions": ["hkg1"],
   "crons": [
     {
       "path": "/api/refresh",
       "schedule": "0 */2 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "src/app/api/refresh/route.ts": {
+      "maxDuration": 300
+    }
+  }
 }

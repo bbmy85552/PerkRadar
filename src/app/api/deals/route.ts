@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getBoardState } from "@/lib/board";
 import { logFailure } from "@/lib/log";
+export const preferredRegion = "hkg1";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

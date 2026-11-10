@@ -8,9 +8,10 @@ import {
 } from "@/lib/refresh-auth";
 import { RefreshRejected, runRefresh } from "@/lib/refresh";
 
+export const preferredRegion = "hkg1";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 function json(body: unknown, status = 200, extra?: HeadersInit) {
   return NextResponse.json(body, {
