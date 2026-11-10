@@ -113,7 +113,7 @@ async function fetchAll(options: Required<Pick<RefreshOptions, "now" | "timeoutM
 }
 
 async function applySource(loaded: LoadedSource, roundId: number, now: number): Promise<number> {
-  if (!loaded.ok) {
+  if (loaded.ok === false) {
     await insertSourceRun({
       roundId,
       sourceId: loaded.sourceId,
@@ -139,12 +139,7 @@ async function applySource(loaded: LoadedSource, roundId: number, now: number): 
     }
     const publishedAt = item.publishedAt;
     const expiresAt = item.expiresAt;
-    if (
-      isStale(
-        { publishedAt, firstSeenAt: now, expiresAt },
-        now,
-      )
-    ) {
+    if (isStale({ publishedAt, firstSeenAt: now, expiresAt }, now)) {
       continue;
     }
     const title = item.title.trim();

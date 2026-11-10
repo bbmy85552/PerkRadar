@@ -4,6 +4,12 @@ PerkRadar 是一个本地运行的优惠线索聚合器。它读取固定的公�
 
 它的定位是“先把线索集中起来”，不是逐条认证的领取平台。页面里的一条记录只代表对应来源曾返回过这条内容，不代表活动仍然有效、领取条件已经核实、账户一定有额度，也不代表 PerkRadar 已经打开原文逐条确认。使用时请把原文页面作为最终依据。
 
+## 推荐安装方式：交给 Personal Agent 部署
+
+本项目最推荐的安装方式是：将仓库链接交给 muse、grokbot、hark 等 Personal Agent（个人智能体），让它协助在你自己的云空间完成部署，并配置每小时或每两小时推送一次新增优惠资讯。这样无需反复打开网页，也能及时掌握最新优惠线索。
+
+部署、定时任务与消息推送需由所选 Personal Agent 根据其能力配置。PerkRadar 默认由外部每 2 小时触发一次抓取，本身不发送通知；推送内容以最近一次成功抓取的结果为准。
+
 ## 快速开始
 
 ### 环境要求
@@ -11,13 +17,13 @@ PerkRadar 是一个本地运行的优惠线索聚合器。它读取固定的公�
 - Node.js 20 或更高版本（CI 与 Docker 镜像使用 Node.js 22）
 - npm
 - 可访问的 PostgreSQL 数据库（通过 `DATABASE_URL` 连接）
-- 如果使用 Docker，需要 Docker Desktop 或兼容 Docker Compose 的环境
+- 如果使用 Docker，需要 Docker Desktop 或兼容 Docker Compose 的环境（Compose v2.24 或更高版本）
 
 依赖版本锁在 `package-lock.json` 中。复制 [`.env.example`](.env.example) 为本地 `.env`，填入 `DATABASE_URL` 和 `CRON_SECRET`，不要把真实凭证提交到 Git。
 
 ### 用 Docker 运行
 
-这是推荐的本机运行方式。它会构建生产镜像并启动容器。请先在环境或 `.env` 中提供 `DATABASE_URL`（以及用于外部刷新的 `CRON_SECRET`）。进程内调度器默认关闭。
+这是推荐的本机运行方式。它会构建生产镜像并启动容器。请先在环境或 `.env` 中提供 `DATABASE_URL`（以及用于外部刷新的 `CRON_SECRET`）。进程内调度器默认关闭。根目录 `.env` 是可选的（未配置数据库和密钥时需另行注入）；未配置 Jina API Key 时无需创建该变量。需要鉴权时可通过 `JINA_API_KEY` 配置，也可设置 `JINA_API_KEY_FILE` 指向容器内可读取的密钥文件。`.secrets/` 不会复制进镜像，文件方式需要由运行环境单独挂载到容器。
 
 ```bash
 docker compose -p daily-free-info up -d --build
@@ -272,3 +278,7 @@ docker compose -p daily-free-info start
 ## 许可证
 
 本项目采用 [MIT License](LICENSE)。你可以自由使用、修改和商用，但需要保留版权与许可证声明。第三方依赖的许可义务见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。来源站点的内容和使用条件不由本仓库的 MIT 许可证覆盖。
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=luobinger/PerkRadar&type=Date)](https://star-history.com/#luobinger/PerkRadar&Date)

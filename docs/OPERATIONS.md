@@ -53,6 +53,7 @@ curl -sS http://127.0.0.1:38481/api/health
 | 浏览器打不开 | `docker compose -p daily-free-info ps`。Docker 是否启动。端口是否用了 `HOST_PORT`。只应访问 `127.0.0.1` |
 | 健康 503，`数据库不可读` | `DATABASE_URL` 是否指向正确的库、网络和权限是否可用。不要对其他应用的数据库做迁移或清理。读库失败会记 `health_check_failed` / `deals_read_failed` 日志；`GET /api/deals` 同样会返回 503 `数据库不可读` |
 | 来源失败或超时 | `/api/health` 的 `failures`，以及 `docker compose -p daily-free-info logs` 里 `[deals]` 的 `source_round.reason` 与 `error`。25 秒超时记为「超时」（`timeout`）；HTTP 错误状态（`http_status`）、响应过大（`response_too_large`）、格式 / 解析错误（`malformed_response`）各有分类。LINUX DO 格式不对会写明可能被阻断。不要改去直连 |
+| 想按轮次看完整日志 | 用 [DEVELOPMENT.md](DEVELOPMENT.md)「结构化日志」里按 `roundId` 过滤的命令；`at` 是 UTC，页面时间是北京时间。`up -d --build` 重建容器后旧日志不可见，留档要先导出 |
 | 某源 0 条但 `lastOk` 为真 | 这次 feed 解析结果是空的，旧行是否还在由 7 天和到期规则决定 |
 | 页面时间看起来差 8 小时 | 页面标签按 `Asia/Shanghai` 格式化。容器未设置 `TZ`，库内是 Unix 毫秒。先对照 `fetchedAt` 和 `fetchedAtBeijing`，不要只看容器 `date` |
 | 刷新 401 | 缺少或写错了 `Authorization: Bearer`、`X-Cron-Secret` 或 `X-Refresh-Secret`。页面上的同源「立即刷新」不受此影响 |
@@ -69,8 +70,8 @@ curl -sS http://127.0.0.1:38481/api/health
 不要把 `DATABASE_URL` 或密码写进备份文件名、脚本仓库或 issue。使用 `pg_dump` 对 PerkRadar 自己的数据库做逻辑备份：
 
 ```bash
-mkdir -p "$HOME/free-info-archives"
-pg_dump --format=custom --file="$HOME/free-info-archives/perkradar-$(date +%Y%m%d-%H%M%S).dump" "$DATABASE_URL"
+mkdir -p "$HOME/perkradar-archives"
+pg_dump --format=custom --file="$HOME/perkradar-archives/perkradar-$(date +%Y%m%d-%H%M%S).dump" "$DATABASE_URL"
 ```
 
 如果习惯用拆开的参数，也可以 `pg_dump -h ... -p ... -U ... -d perkradar`，不要把密码写进命令历史能长期保留的脚本；优先用 `.pgpass` 或环境变量。确认命令没有报错之后，再把目标文件改成带日期的名字。不要对其他应用的数据库执行 dump 或 drop。
@@ -80,7 +81,7 @@ pg_dump --format=custom --file="$HOME/free-info-archives/perkradar-$(date +%Y%m%
 先按上一节再做一份当前库的备份。然后在确认目标库就是 PerkRadar 使用的那个数据库之后，再恢复：
 
 ```bash
-pg_restore --clean --if-exists --no-owner --dbname="$DATABASE_URL" "$HOME/free-info-archives/perkradar-YYYYMMDD-HHMMSS.dump"
+pg_restore --clean --if-exists --no-owner --dbname="$DATABASE_URL" "$HOME/perkradar-archives/perkradar-YYYYMMDD-HHMMSS.dump"
 ```
 
 恢复完成后：
@@ -100,7 +101,7 @@ curl -sS http://127.0.0.1:38471/api/health
 docker image tag daily-free-info:local daily-free-info:before-rollback
 ```
 
-源码和部署包打成 tar，放在仓库外面，例如 `$HOME/free-info-archives/`。不要在项目目录里再展开一份旧源码。`tsconfig.json` 的 `include` 含有 `**/*.ts`，`tsconfig.json` 与 `eslint.config.mjs` 现在排除 `deployment-backups/`；但项目树其它位置若留下旧的 `next.config.ts` 或其他 `.ts`，TypeScript 仍会扫到它们。`deployment-backups` 保持为 tar，不要展开后留在项目树里。
+源码和部署包打成 tar，放在仓库外面，例如 `$HOME/perkradar-archives/`。不要在项目目录里再展开一份旧源码。`tsconfig.json` 的 `include` 含有 `**/*.ts`，`tsconfig.json` 与 `eslint.config.mjs` 现在排除 `deployment-backups/`；但项目树其它位置若留下旧的 `next.config.ts` 或其他 `.ts`，TypeScript 仍会扫到它们。`deployment-backups` 保持为 tar，不要展开后留在项目树里。
 
 回滚源码时只替换有记录的应用文件，不要用旧包覆盖 `.env`，或用户后来自己加的文件，也不要改 PostgreSQL 里属于其他应用的数据库。换回旧镜像后执行：
 
