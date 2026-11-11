@@ -528,8 +528,10 @@
 }
 
 .pr-card-link {
-  background: var(--pr-accent);
-  color: #fff;
+  background: transparent;
+  color: var(--pr-accent);
+  padding: 0 2px;
+  border-radius: 8px;
 }
 
 .pr-text-btn {
@@ -538,8 +540,9 @@
 }
 
 .pr-text-btn[aria-pressed="true"] {
-  background: var(--pr-accent-soft);
-  color: var(--pr-accent);
+  background: transparent;
+  color: var(--pr-tertiary);
+  box-shadow: inset 0 0 0 1px var(--pr-separator);
 }
 
 .pr-card-link svg,
@@ -1093,10 +1096,17 @@
   }
 
   .pr-card-link:hover {
-    background: #0066D6;
+    background: var(--pr-accent-soft);
   }
 
-  .pr-text-btn:hover,
+  .pr-text-btn:hover {
+    background: var(--pr-fill-strong);
+  }
+
+  .pr-text-btn[aria-pressed="true"]:hover {
+    background: var(--pr-fill);
+  }
+
   .pr-refresh-btn:hover,
   .board-refresh:hover {
     filter: brightness(0.96);
