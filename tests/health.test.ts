@@ -55,13 +55,13 @@ describe("health report", () => {
     assert.equal(serialized.includes("secret-looking"), false);
   });
 
-  it("warns after three consecutive source failures and clears after recovery", () => {
-    useMemoryDb();
+  it("warns after three consecutive source failures and clears after recovery", async () => {
+    await useMemoryDb();
     const base = Date.parse("2026-11-08T00:00:00.000Z");
     for (let index = 0; index < 3; index += 1) {
       const startedAt = base + index * 1000;
-      const roundId = insertRound("schedule", startedAt);
-      insertSourceRun({
+      const roundId = await insertRound("schedule", startedAt);
+      await insertSourceRun({
         roundId,
         sourceId: "v2ex",
         ok: false,
@@ -72,16 +72,16 @@ describe("health report", () => {
         startedAt,
         finishedAt: startedAt + 1,
       });
-      finishRound(roundId, startedAt + 1, "partial");
+      await finishRound(roundId, startedAt + 1, "partial");
     }
-    const failed = getBoardState(base + 3000);
+    const failed = await getBoardState(base + 3000);
     const source = failed.sources.find((item) => item.id === "v2ex");
     assert.equal(source?.quality?.consecutiveFailures, 3);
     assert.match(source?.quality?.warning ?? "", /连续失败 3 轮/);
     assert.ok((failed.anomalies ?? []).some((item) => item.includes("V2EX推广") && item.includes("连续失败 3 轮")));
 
-    const recoveredRound = insertRound("schedule", base + 4000);
-    insertSourceRun({
+    const recoveredRound = await insertRound("schedule", base + 4000);
+    await insertSourceRun({
       roundId: recoveredRound,
       sourceId: "v2ex",
       ok: true,
@@ -92,17 +92,17 @@ describe("health report", () => {
       startedAt: base + 4000,
       finishedAt: base + 4001,
     });
-    finishRound(recoveredRound, base + 4001, "partial");
-    const recovered = getBoardState(base + 5000);
+    await finishRound(recoveredRound, base + 4001, "partial");
+    const recovered = await getBoardState(base + 5000);
     assert.equal(recovered.sources.find((item) => item.id === "v2ex")?.quality?.consecutiveFailures, 0);
     assert.equal((recovered.anomalies ?? []).some((item) => item.includes("V2EX推广") && item.includes("连续失败")), false);
   });
 
-  it("flags a source count drop and parser structure failure without exposing response content", () => {
-    useMemoryDb();
+  it("flags a source count drop and parser structure failure without exposing response content", async () => {
+    await useMemoryDb();
     const base = Date.parse("2026-11-08T00:00:00.000Z");
-    const firstRound = insertRound("schedule", base);
-    insertSourceRun({
+    const firstRound = await insertRound("schedule", base);
+    await insertSourceRun({
       roundId: firstRound,
       sourceId: "appinn",
       ok: true,
@@ -113,10 +113,10 @@ describe("health report", () => {
       startedAt: base,
       finishedAt: base + 1,
     });
-    finishRound(firstRound, base + 1, "partial");
+    await finishRound(firstRound, base + 1, "partial");
 
-    const droppedRound = insertRound("schedule", base + 1000);
-    insertSourceRun({
+    const droppedRound = await insertRound("schedule", base + 1000);
+    await insertSourceRun({
       roundId: droppedRound,
       sourceId: "appinn",
       ok: true,
@@ -127,15 +127,15 @@ describe("health report", () => {
       startedAt: base + 1000,
       finishedAt: base + 1001,
     });
-    finishRound(droppedRound, base + 1001, "partial");
-    const dropped = getBoardState(base + 2000);
+    await finishRound(droppedRound, base + 1001, "partial");
+    const dropped = await getBoardState(base + 2000);
     const countQuality = dropped.sources.find((item) => item.id === "appinn")?.quality;
     assert.equal(countQuality?.countDrop, true);
     assert.match(countQuality?.warning ?? "", /解析条数骤降至 5/);
     assert.ok((dropped.anomalies ?? []).some((item) => item.includes("小众软件") && item.includes("从 10 降到 5")));
 
-    const brokenRound = insertRound("schedule", base + 2000);
-    insertSourceRun({
+    const brokenRound = await insertRound("schedule", base + 2000);
+    await insertSourceRun({
       roundId: brokenRound,
       sourceId: "appinn",
       ok: false,
@@ -146,7 +146,7 @@ describe("health report", () => {
       startedAt: base + 2000,
       finishedAt: base + 2001,
     });
-    insertSourceRun({
+    await insertSourceRun({
       roundId: brokenRound,
       sourceId: "linuxdo",
       ok: false,
@@ -157,8 +157,8 @@ describe("health report", () => {
       startedAt: base + 2000,
       finishedAt: base + 2001,
     });
-    finishRound(brokenRound, base + 2001, "partial");
-    const broken = getBoardState(base + 3000);
+    await finishRound(brokenRound, base + 2001, "partial");
+    const broken = await getBoardState(base + 3000);
     const structureQuality = broken.sources.find((item) => item.id === "appinn")?.quality;
     assert.equal(structureQuality?.countDrop, false);
     assert.equal(structureQuality?.structureAnomaly, true);
@@ -166,8 +166,8 @@ describe("health report", () => {
     assert.ok((broken.anomalies ?? []).some((item) => item.includes("小众软件") && item.includes("解析结构异常")));
     assert.equal(broken.sources.find((item) => item.id === "linuxdo")?.quality?.structureAnomaly, true);
 
-    const linuxdoBrokenRound = insertRound("schedule", base + 3000);
-    insertSourceRun({
+    const linuxdoBrokenRound = await insertRound("schedule", base + 3000);
+    await insertSourceRun({
       roundId: linuxdoBrokenRound,
       sourceId: "linuxdo",
       ok: false,
@@ -178,7 +178,7 @@ describe("health report", () => {
       startedAt: base + 3000,
       finishedAt: base + 3001,
     });
-    finishRound(linuxdoBrokenRound, base + 3001, "partial");
-    assert.equal(getBoardState(base + 4000).sources.find((item) => item.id === "linuxdo")?.quality?.structureAnomaly, true);
+    await finishRound(linuxdoBrokenRound, base + 3001, "partial");
+    assert.equal((await getBoardState(base + 4000)).sources.find((item) => item.id === "linuxdo")?.quality?.structureAnomaly, true);
   });
 });

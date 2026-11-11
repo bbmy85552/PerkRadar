@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { getBoardState } from "@/lib/board";
 import { logFailure } from "@/lib/log";
+export const preferredRegion = "hkg1";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export function GET() {
+export async function GET() {
   try {
-    const board = getBoardState();
+    const board = await getBoardState();
     return NextResponse.json(board, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     // 数据库读失败时不能让调用方把异常当成空数据，明确降级成 503 且不留缓存。

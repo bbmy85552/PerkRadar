@@ -1,6 +1,6 @@
 # 第三方许可声明
 
-本项目源码采用 [MIT License](LICENSE)。以下清单按 `package-lock.json`（lockfileVersion 3）的**生产依赖**整理，核对日期 2026-11-08；依赖或锁文件变更后必须重新生成。
+本项目源码采用 [MIT License](LICENSE)。以下清单按 `package-lock.json`（lockfileVersion 3）的**生产依赖**整理，核对日期 2026-11-10；依赖或锁文件变更后必须重新生成。
 
 ## 随生产镜像分发的依赖
 
@@ -17,6 +17,7 @@ Dockerfile 在 `npm run build` 后执行 `npm prune --omit=dev`，因此生产�
 | `tw-animate-css` | 1.4.0 | MIT | https://github.com/Wombosvideo/tw-animate-css |
 | `class-variance-authority` | 0.7.1 | Apache-2.0 | https://github.com/joe-bell/cva |
 | `lucide-react` | 1.70.0 | ISC | https://github.com/lucide-icons/lucide |
+| `pg` | 8.23.1 | MIT | https://github.com/brianc/node-postgres |
 
 需要保留的义务：
 
@@ -29,6 +30,6 @@ Dockerfile 在 `npm run build` 后执行 `npm prune --omit=dev`，因此生产�
 
 ## 运行时与内置模块
 
-- `node:sqlite` 是 Node.js 内置模块，不是独立引入的第三方包。
+- 离线测试使用的 `@electric-sql/pglite` 是开发依赖，不随生产镜像分发。
 - 基础镜像 `node:22-bookworm-slim`：Node.js 采用 MIT，Debian 系统包各有自己的许可，随镜像分发时以镜像内的版权文件为准。
 - 抓取来源（RSS/Atom 与站点内容）不属于第三方代码许可范畴，见 [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md) 与 [README.md](README.md) 的来源覆盖说明。

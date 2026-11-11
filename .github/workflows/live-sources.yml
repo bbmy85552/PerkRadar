@@ -15,6 +15,20 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: perkradar_probe
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,10 +38,9 @@ jobs:
       - run: npm ci
       - name: Probe live sources into a throwaway database
         env:
-          # `npm run report` calls runRefresh, which writes to DATA_DIR. Never
-          # point it at a real database or at the repository's ./data.
-          DATA_DIR: ${{ runner.temp }}/perkradar-probe
-          DISABLE_SCHEDULER: '1'
+          # `npm run report` writes to DATABASE_URL. This is an ephemeral
+          # GitHub Actions Postgres service, not a production database.
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/perkradar_probe
         run: npm run report
       - name: Upload probe summary
         if: always()

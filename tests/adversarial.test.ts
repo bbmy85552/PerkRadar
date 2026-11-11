@@ -230,9 +230,9 @@ describe("adversarial input", () => {
     assert.equal(toPlain("推荐 [3D] 打印笔"), "推荐 [3D] 打印笔");
   });
 
-  it("re-cleans historical rows on read without rewriting the database", () => {
-    useMemoryDb();
-    insertDeal({
+  it("re-cleans historical rows on read without rewriting the database", async () => {
+    await useMemoryDb();
+    await insertDeal({
       canonicalUrl: "https://www.nodeseek.com/post-ansi",
       url: "https://www.nodeseek.com/post-ansi",
       title: "[1m旧标题",
@@ -245,7 +245,7 @@ describe("adversarial input", () => {
       firstSeenRoundId: 1,
       updatedAt: NOW,
     });
-    const deal = getBoardState(NOW).deals[0];
+    const deal = (await getBoardState(NOW)).deals[0];
     assert.equal(deal?.title, "旧标题");
     assert.ok(deal?.summary.includes("旧摘要"));
     assert.equal(deal?.summary.includes("+++"), false);

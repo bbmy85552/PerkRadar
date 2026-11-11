@@ -4,7 +4,7 @@
 
 ## 技术与目录
 
-当前锁定的版本见 `package.json`：Next.js 15.5.29、React 19.1.0。生产镜像是官方 `node:22-bookworm-slim`，同时提供 `linux/amd64` 与 `linux/arm64`，Mac 上不要加 `--platform`。本机开发同样需要 Node.js 22，因为数据库用的是 Node 内置的 `node:sqlite`（实验 API，启动时会有 ExperimentalWarning）。
+当前锁定的版本见 `package.json`：Next.js 15.5.29、React 19.1.0。生产镜像是官方 `node:22-bookworm-slim`，同时提供 `linux/amd64` 与 `linux/arm64`，Mac 上不要加 `--platform`。本机开发需要 Node.js 20 或更高版本（CI 与镜像使用 22），并通过 `DATABASE_URL` 连接 PostgreSQL。离线测试使用 `@electric-sql/pglite`，不会访问真实数据库。
 
 | 路径 | 职责 |
 | --- | --- |
@@ -14,20 +14,21 @@
 | `src/app/demo/page.tsx` | 7 条示例的设计预览页（1 条「其他」默认隐藏，「只看新增」3 条，开关只在当前页内存生效、刷新重置），只在源码与 dev 预览可用，生产镜像不含此路由 |
 | `src/app/api/deals/route.ts` | `GET /api/deals` |
 | `src/app/api/health/route.ts` | `GET /api/health` |
-| `src/app/api/refresh/route.ts` | `POST /api/refresh` |
-| `src/instrumentation.ts` | Node 服务启动时登记调度 |
+| `src/app/api/refresh/route.ts` | `POST` / `GET /api/refresh` |
+| `src/instrumentation.ts` | 仅在 `ENABLE_SCHEDULER=1` 时登记进程内调度 |
 | `src/lib/source-defs.ts` | 七个来源的固定 URL |
 | `src/lib/parse/` | LINUX DO、RSS/Atom、Epic 解析 |
 | `src/lib/classify.ts` | 关键词分类 |
 | `src/lib/board-view.ts` | 客户端校验 `/api/deals`、`/api/refresh` 与 SSR 快照；拒绝危险 URL 与畸形结构；计数从校验后 `deals` 推导 |
 | `src/lib/filter-deals.ts` | 浏览器里的搜索、筛选和排序；容忍畸形字段，搜索字面包含；可选 `includeOther`，省略时沿用原有筛选行为 |
 | `src/lib/refresh.ts` | 一轮抓取、锁、失败隔离 |
-| `src/lib/scheduler.ts` | 启动后首轮和每 2 小时 |
+| `src/lib/scheduler.ts` | 可选的进程内调度，默认关闭 |
 | `src/lib/retention.ts` | 7 天和到期边界 |
-| `src/lib/db.ts` | SQLite 表和读写 |
+| `src/lib/db.ts` | PostgreSQL 表和读写 |
 | `src/lib/snapshot.ts` | 抓取结束后的公开快照；本机 Compose 没有打开它 |
 | `src/lib/config.ts` | 超时、留存、大小上限等常量 |
 | `src/lib/guard.ts` | 同源校验、客户端 IP、手动刷新限流 |
+| `src/lib/refresh-auth.ts` | 外部刷新密钥校验 |
 | `src/lib/log.ts` | 结构化日志前缀、错误截断与失败分类 |
 | `tests/` | 测试与夹具。生产镜像构建时被 `.dockerignore` 排除 |
 | `scripts/live-report.ts` | 立刻再抓一轮并写 `reports/`。不是日常命令 |
@@ -43,28 +44,29 @@
 npm ci
 npm test
 npm run lint
+npm run typecheck
 npm run build
 npm run dev
 npm run start
 ```
 
-`npm test` 使用 `node --import tsx --test tests/*.test.ts`。`npm run report` 会访问外网并写入本机库，只在确实要再抓一轮时使用。
+`npm test` 使用 `PERKRADAR_TEST=1 node --import tsx --test tests/*.test.ts`，在 PGlite 内存库上离线运行，即使本机环境里有 `DATABASE_URL` 也不会去连。`npm run report` 会访问外网并写入 `DATABASE_URL` 指向的库，只在确实要再抓一轮时使用。
 
 Docker 的构建和启停见 [OPERATIONS.md](OPERATIONS.md)。
 
 ## 开发进程和生产进程
 
-两边都由 `src/instrumentation.ts` 在 Node 运行时调用 `startScheduler()`。构建阶段会跳过：`NEXT_PHASE=phase-production-build` 或 `npm_lifecycle_event=build`。`DISABLE_SCHEDULER=1` 会完全不调度。
+`src/instrumentation.ts` 只会在显式设置 `ENABLE_SCHEDULER=1` 时调用 `startScheduler()`。构建阶段会跳过：`NEXT_PHASE=phase-production-build` 或 `npm_lifecycle_event=build`。`DISABLE_SCHEDULER=1` 即使已经 opt-in 也会关闭调度。生产 Docker 和 Vercel 不要打开进程内调度，改由外部 HTTP 请求触发刷新。
 
-`npm run dev` 是 `next dev`，带 Turbopack，监听 `0.0.0.0:38471`。热更新用 `globalThis` 避免重复登记定时器。开发时数据库默认是项目下的 `data/deals.db`。
+`npm run dev` 是 `next dev`，带 Turbopack，监听 `0.0.0.0:38471`。热更新用 `globalThis` 避免重复登记连接池。开发时必须提供 `DATABASE_URL`，启动时自动执行 `CREATE TABLE IF NOT EXISTS`。
 
-生产容器执行的是镜像里的 `npm run start`，也就是 `next start`，容器内端口固定 38471。Compose 把宿主的 `127.0.0.1:${HOST_PORT:-38471}` 转到这个端口。`DATA_DIR=/data`，对应宿主的 `./data`。
+生产容器执行的是镜像里的 `npm run start`，也就是 `next start`，容器内端口固定 38471。Compose 把宿主的 `127.0.0.1:${HOST_PORT:-38471}` 转到这个端口，并把 `DATABASE_URL`、`CRON_SECRET` 注入容器。
 
-`next.config.mjs` 是普通 JavaScript，只设置 `serverExternalPackages: ["node:sqlite"]`。Dockerfile 在 `npm run build` 之后执行 `npm prune --omit=dev`。若仍使用 `next.config.ts`，`next start` 发现没有 TypeScript 就会联网安装它。这是已经修掉的启动行为，不要改回 `.ts` 配置。
+`next.config.mjs` 是普通 JavaScript，只设置 `serverExternalPackages: ["pg"]`。Dockerfile 在 `npm run build` 之后执行 `npm prune --omit=dev`。若仍使用 `next.config.ts`，`next start` 发现没有 TypeScript 就会联网安装它。这是已经修掉的启动行为，不要改回 `.ts` 配置。
 
 依赖审计：生产依赖 `npm audit --omit=dev` 为 0 项；完整 `npm audit` 的 11 项全部在开发依赖里（`shadcn` 的 `deepmerge`、`typescript-eslint` / `ts-morph` 的 `minimatch`）。不加 `--force` 的 `npm audit fix` 消不掉它们，`--force` 会把 `shadcn` 换成不兼容的大版本，因此不要用它。CI 已显式指定官方 registry；本机默认 npm 镜像不支持 audit 端点，本地复查要手动加 `--registry=https://registry.npmjs.org`（如 `npm audit --omit=dev --registry=https://registry.npmjs.org`）。依赖或锁文件变更后必须重新跑，不能把任何一次结果写成永久保证。
 
-工程配置：`package.json` 声明 `engines.node >=22`，`.nvmrc` 为 22，两个 workflow 固定 Node 22。`tsconfig.json` 与 `eslint.config.mjs` 都排除 `deployment-backups/`：那里有展开的旧 `next.config.ts`，会被 `include: **/*.ts` 扫到。`.dockerignore` 额外排除根目录 `*.md` 与 `scripts/`，镜像仍以 `node`（uid 1000）非 root 运行。两个 workflow 声明 `permissions: contents: read`；`live-sources.yml` 的 cron 用 UTC（`23 4 * * *` 即北京时间 12:23）。Next 仍锁 15.5.29、ESLint 仍 9，没有升级大版本。
+工程配置：`package.json` 声明 `engines.node >=20`，`.nvmrc` 为 22，两个 workflow 固定 Node 22。`tsconfig.json` 与 `eslint.config.mjs` 都排除 `deployment-backups/`：那里有展开的旧 `next.config.ts`，会被 `include: **/*.ts` 扫到。`.dockerignore` 额外排除根目录 `*.md` 与 `scripts/`，镜像仍以 `node`（uid 1000）非 root 运行。两个 workflow 声明 `permissions: contents: read`；`live-sources.yml` 的 cron 用 UTC（`23 4 * * *` 即北京时间 12:23）。Next 仍锁 15.5.29、ESLint 仍 9，没有升级大版本。
 
 ## API
 
@@ -101,7 +103,7 @@ Docker 的构建和启停见 [OPERATIONS.md](OPERATIONS.md)。
 
 - `generatedAt`：这次读库的时刻。
 - `lastUpdatedAt` / `lastUpdatedLabel`：最近一轮结束时刻。还没有任何一轮时为 `null`。
-- `nextRefreshAt` / `nextRefreshLabel`：调度器写入的下一次计划。没有写过则为 `null`。
+- `nextRefreshAt` / `nextRefreshLabel`：仅在进程内调度器运行并写入时才有下一次计划。默认关闭调度时为 `null`。
 - `sourceHealth`、`activeCount`、`newCount`、`refreshInProgress`。
 - `roundStatus`：`success`、`partial`、`failed`，或还没有结束轮时 `null`。
 - `failures`：这一轮失败来源的 `sourceId`、`sourceName`、`error`。
@@ -112,21 +114,24 @@ Docker 的构建和启停见 [OPERATIONS.md](OPERATIONS.md)。
 
 读库抛错时 HTTP 503，主体是 `{ "error": "数据库不可读" }`，并记 `deals_read_failed` 日志；与 `/api/health` 的降级一致。成功响应的字段不变。
 
-### `POST /api/refresh`
+### `POST /api/refresh` 与 `GET /api/refresh`
 
-没有请求体。成功时 HTTP 200，主体同样是 `BoardState`，并且 `refreshInProgress` 在返回前已经清掉。
+没有请求体。成功时 HTTP 200，主体同样是 `BoardState`，并且 `refreshInProgress` 在返回前已经清掉。路由设置了 `maxDuration = 60`，因为各来源是并行抓取，单源超时 25 秒，一轮通常应在一分钟内结束。
+
+带有效 `CRON_SECRET` 或 `REFRESH_SECRET` 的请求（`Authorization: Bearer`，或 `X-Cron-Secret` / `X-Refresh-Secret`）按外部调度处理，不受手动冷却和每 IP 限流约束。`GET` 只接受带密钥的调用，供 Vercel Cron 使用。同源的页面 `POST` 仍走手动刷新。
 
 | HTTP | 何时 | 主体 |
 | --- | --- | --- |
+| 401 | 密钥已配置但请求既没有有效密钥、也不是同源页面刷新；或 `GET` 未带密钥 | `{ "error": "未授权" }` |
 | 409 | 已有一轮在跑 | `{ "error": "已有刷新进行中" }` |
 | 429 | 距上次手动刷新不足 60 秒，或同一 IP 10 分钟内超过 8 次 | `{ "error": "刷新过于频繁，请稍后再试" }` 或 `{ "error": "手动刷新过于频繁，请稍后再试" }`，并带 `retry-after` |
 | 403 | 带 `sec-fetch-site: cross-site`，或 `Origin` 的主机和请求的 `Host` 不一致 | `{ "error": "拒绝跨站刷新" }` 等 |
 | 400 | `Content-Length` 大于 2048 | `{ "error": "请求无效" }` |
 | 500 | 其他未分类错误 | `{ "error": "刷新失败" }` |
 
-不带 `Origin` 的请求仍放行，[OPERATIONS.md](OPERATIONS.md) 的本机 `curl` 排障命令依赖这一点。客户端 IP 默认一律归为 `local`，忽略 `x-forwarded-for` / `x-real-ip`；只有 `TRUST_PROXY_HEADERS=1` 时才信任转发头，详见 [SECURITY.md](../SECURITY.md)。这些防护都不是身份校验。
+未配置密钥时，不带 `Origin` 的 `POST` 仍放行，只适合本机调试。配置密钥后，本机 `curl` 必须带密钥，见 [OPERATIONS.md](OPERATIONS.md)。客户端 IP 默认一律归为 `local`，忽略 `x-forwarded-for` / `x-real-ip`；只有 `TRUST_PROXY_HEADERS=1` 时才信任转发头，详见 [SECURITY.md](../SECURITY.md)。
 
-定时抓取不走这个 60 秒冷却，但会和手动抓取共用进程内的锁。锁只在一个 Node 进程里有效，所以不能开第二个容器。
+外部刷新不走 60 秒冷却，但会和手动抓取共用进程内的锁。这把锁只在一个 Node 进程里有效，无服务器多实例之间不会互斥。
 
 ## 结构化日志
 
@@ -144,6 +149,16 @@ docker compose -p daily-free-info logs -f --tail=200
 docker compose -p daily-free-info logs --no-color 2>&1 | grep '\[deals\]'
 ```
 
+一轮抓取通常留下 1 条 `round_start`、7 条 `source_round` 和 1 条 `round_finished`；某源丢弃跨域名链接时另有 `offsite_link_dropped`。`source_round` 是写库事务提交、输出 `round_finished` 之后才按轮次逐条补写的，所以这 7 行的 `at` 与 `round_finished.at` 常常只差几毫秒，不代表抓取先后；各源真正的起止时间看 `attemptedAt` / `completedAt` 与 `durationMs`。`roundId` 与 `rounds` 表的 id 一致，把下面命令里的 37 换成要查的轮次即可：
+
+```bash
+docker compose -p daily-free-info logs --no-color --tail=400 2>&1 | grep '\[deals\]' | grep '"roundId":37'
+docker compose -p daily-free-info logs --no-color --tail=400 2>&1 | grep '"ok":false'
+docker compose -p daily-free-info logs --no-color --tail=400 2>&1 | grep '"event":"round_finished"' | tail -10
+```
+
+日志里的 `at` 是 UTC 的 ISO 时刻，`/api/health` 的 `fetchedAt` 也是 UTC；页面上的 `fetchedAtBeijing` 与 `lastUpdatedLabel` 按 `Asia/Shanghai` 显示，相差 8 小时不是故障。容器不设 `TZ`。
+
 | 事件 | 流向 | 字段 | 含义 |
 | --- | --- | --- | --- |
 | `round_start` | stdout | `trigger`（`manual` / `schedule`）、`sources` | 一轮开始，来源总数 |
@@ -155,10 +170,25 @@ docker compose -p daily-free-info logs --no-color 2>&1 | grep '\[deals\]'
 | `deals_read_failed` | stderr | `error` | `GET /api/deals` 读库失败 |
 | `health_check_failed` | stderr | `error` | `GET /api/health` 读库失败 |
 | `manual_refresh_ok` | stdout | `roundStatus`、`activeCount` | 手动刷新成功 |
+| `cron_refresh_ok` | stdout | `roundStatus`、`activeCount` | 带密钥的外部刷新成功 |
+| `cron_refresh_rejected` | stdout | `code`、`status` | 外部刷新缺少或写错密钥 |
 | `manual_refresh_rejected` | stdout | `code`、`status` | 被限流 / 冷却 / 同源防护拒绝；`code` 为 `rate_limit`、`guard`，或 `BUSY` / `COOLDOWN` |
 | `manual_refresh_failed` | stderr | `error` | 手动刷新出现未分类错误 |
 | `scheduled_refresh_skipped` | stdout | `reason` | 定时轮次因已有刷新正在运行而跳过 |
 | `scheduled_refresh_failed` | stderr | `error` | 定时轮次出现未分类错误 |
+
+`/api/health` 与 `/api/deals` 的轮次字段和日志同源：`fetchedAt` / `lastUpdatedAt` 是最近一次 `round_finished` 的结束时刻，`sourceHealth.ok` 是该轮 `ok: true` 的 `source_round` 数，`sources[].lastFetched` / `lastInserted` / `lastFinalUrl` / `lastError` 分别对应 `parsed` / `inserted` / `finalUrl` / `error`。`quality` 与 `anomalies` 是读库时按最近几轮历史算出来的，没有单独的日志事件；`nextRefreshAt` 由调度器写入，默认关闭进程内调度时通常为 `null`，也不写日志。接口只给当前状态，逐轮细节回到日志看。
+
+手动刷新被拒绝时，`manual_refresh_rejected.status` 就是接口返回的 HTTP 状态，`code` 表示拦在哪一层：
+
+| `code` | `status` | 触发条件 |
+| --- | --- | --- |
+| `guard` | 403 / 400 | 同源校验失败，或 `Content-Length` 超过 2048 |
+| `rate_limit` | 429 | 同一 IP 10 分钟内触发超过 8 次 |
+| `COOLDOWN` | 429 | 距上次手动刷新不足 60 秒 |
+| `BUSY` | 409 | 已有一轮抓取在跑 |
+
+`manual_refresh_ok` 只在手动轮成功时输出，带 `roundStatus` 与 `activeCount`；外部密钥刷新成功对应 `cron_refresh_ok`。
 
 `source_round.reason` 是对失败错误的粗分类，排查时不必读原始错误串：
 
@@ -172,19 +202,28 @@ docker compose -p daily-free-info logs --no-color 2>&1 | grep '\[deals\]'
 
 失败事件除表中字段外还带 `error`。失败原因要看 `source_round.reason` 与 `error`，不要只看 `round_finished.status`。每轮验收清单见 [DATA_QUALITY.md](DATA_QUALITY.md)。
 
+`docker compose logs` 只读当前容器。`up -d --build` 重建容器后，旧容器的日志不再可见；容器重启也不会自动再抓一轮，除非外部触发刷新或显式打开了进程内调度。需要留档就先导出到仓库外：
+
+```bash
+mkdir -p "$HOME/perkradar-archives"
+docker compose -p daily-free-info logs --no-color > "$HOME/perkradar-archives/deals-$(date +%Y%m%d-%H%M%S).log"
+```
+
+仓库忽略 `reports/` 与 `*.log`，不要把日志提交进版本库；日志说明写在文档里。
+
 ## 本地修改流程
 
 1. 先看 `/api/health` 和页面，记下改之前的来源数和最后更新时间。
 2. 改代码。解析和分类的预期放进 `tests/`，夹具可以是合成的，但必须留在测试里。
-3. 依次跑 `npm test` → `npm run lint` → `npx --no-install tsc --noEmit` → `npm run build`。动到页面就在 1440、1280 和 390 宽度下看真实数据，不要只看编译；验收顺序见 [.mrdayone/verify.md](../.mrdayone/verify.md)，结果见 [界面重构测试报告](PERKRADAR_UI_REFACTOR_TEST_REPORT.doc.md)（配套 .docx 由 IDE 生成）与 [reports/browser-adversarial-2026-11-09.log](../reports/browser-adversarial-2026-11-09.log)。
+3. 依次跑 `npm test` → `npm run lint` → `npm run typecheck` → `npm run build`。动到页面就在 1440、1280 和 390 宽度下看真实数据，不要只看编译；验收顺序见 [CONTRIBUTING.md](../CONTRIBUTING.md)「改动流程」；单次验收记录属本地产物，不随公开仓库发布。
 4. 生产依赖有变动时再跑 `npm audit --omit=dev --registry=https://registry.npmjs.org` 和完整的 `npm audit --registry=https://registry.npmjs.org`。本机默认 npm 镜像不支持审计端点。
-5. 需要更新容器时用 [OPERATIONS.md](OPERATIONS.md) 里只针对 `daily-free-info` 的命令。不要把 `./data` 放进镜像，也不要用测试库覆盖它。
+5. 需要更新容器时用 [OPERATIONS.md](OPERATIONS.md) 里只针对 `daily-free-info` 的命令。不要把 `.env` 放进镜像，也不要用测试或探测去写正在使用的生产库。
 
 仓库已在本目录初始化（`main` 分支），远端见 `git remote -v`。只操作本项目，不要动其他目录的容器、端口或卷。
 
 ## 视觉验收
 
-这是改界面之后要人眼看的标准，不是现成的自动测试。改布局之后必须重新看，不能用一次历史验收代替。验收顺序、真实数据与异常路径见 [.mrdayone/verify.md](../.mrdayone/verify.md)，重构验收记录见 [界面重构测试报告](PERKRADAR_UI_REFACTOR_TEST_REPORT.doc.md)（配套 .docx 由 IDE 生成）、[reports/ui-refactor-2026-11-09.log](../reports/ui-refactor-2026-11-09.log)、[reports/browser-adversarial-2026-11-09.log](../reports/browser-adversarial-2026-11-09.log) 与 [reports/default-hide-other-2026-11-09.log](../reports/default-hide-other-2026-11-09.log)。
+这是改界面之后要人眼看的标准，不是现成的自动测试。改布局之后必须重新看，不能用一次历史验收代替。验收顺序、真实数据与异常路径见 [CONTRIBUTING.md](../CONTRIBUTING.md)「改动流程」与本节清单；单次验收记录属本地产物，不随公开仓库发布。
 
 正式首页按 `/demo` 的布局：顶部只有品牌与「立即刷新」；搜索、排序、来源、分类、收藏、运行状态与逐源结果在左侧状态区和提示区；「信息列表」标题行右侧是「查看全部线索」与「只看新增」两个开关，并显示可见条数与「已隐藏 N 条「其他」线索」；卡片只保留标题、收藏文字按钮、摘要框、原文信息、标签、「打开原文」与「标记已领」。`/demo` 是本地 dev 预览的设计预览页（7 条示例，其中 1 条「其他」默认隐藏，「只看新增」仍为 3 条，开关只在当前页面内存生效、刷新重置），只在源码与 dev 预览可用；生产镜像的构建结果只有 `/`、`/_not-found` 和三个 API，不含 `/demo`。正式页与它共用 `src/components/deal-board.css`。
 
@@ -196,4 +235,4 @@ docker compose -p daily-free-info logs --no-color 2>&1 | grep '\[deals\]'
 - 默认隐藏「其他」逐项看：「全部」视图首屏可见条数与「已隐藏 N 条「其他」线索」提示；点「查看全部线索」后显示所有条目；与「只看新增」组合；显式点「其他」分类或「我的收藏」时不隐藏；搜索仍受默认隐藏影响、结果为空会提示打开开关；重置回到默认隐藏；刷新后开关保留。这只是展示过滤，收录规则、分类规则与数据库都不变。本地 `/demo` 的 7 条示例默认隐藏 1 条「其他」，开关刷新即重置。
 - 异常路径用浏览器 `route` 改写 `/api/refresh`：恶意标题 / 链接、空库、畸形结构、429、断网；逐项确认页面保留旧内容或显示明确提示，不出现空白和假条目。客户端 `src/lib/board-view.ts` 拒绝 `javascript:` / `data:` / 带凭据 / 超长 URL，截断异常文本，关键结构坏时拒绝整份数据，计数从校验后 `deals` 推导。
 - 空库、筛选为空、轮询接口失败、本地状态写入失败各有区分提示，不能用假条目填上，也不能让几种状态看起来一样。
-- 命令与浏览器验收记录：`npm test`、`npm run lint`、`npx --no-install tsc --noEmit`、`git diff --check` 通过，1280 桌面 / 390 手机预览无控制台报错、无失败请求、无关键视觉缺陷，390px 无横向溢出。测试项数以 `npm test` 输出为准，验收日志见本节开头。
+- 命令与浏览器验收记录：`npm test`、`npm run lint`、`npx --no-install tsc --noEmit`、`git diff --check` 通过，1280 桌面 / 390 手机预览无控制台报错、无失败请求、无关键视觉缺陷，390px 无横向溢出。测试项数以 `npm test` 输出为准。

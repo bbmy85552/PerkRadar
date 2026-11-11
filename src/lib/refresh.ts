@@ -112,9 +112,9 @@ async function fetchAll(options: Required<Pick<RefreshOptions, "now" | "timeoutM
   );
 }
 
-function applySource(loaded: LoadedSource, roundId: number, now: number): number {
-  if (!loaded.ok) {
-    insertSourceRun({
+async function applySource(loaded: LoadedSource, roundId: number, now: number): Promise<number> {
+  if (loaded.ok === false) {
+    await insertSourceRun({
       roundId,
       sourceId: loaded.sourceId,
       ok: false,
@@ -139,24 +139,19 @@ function applySource(loaded: LoadedSource, roundId: number, now: number): number
     }
     const publishedAt = item.publishedAt;
     const expiresAt = item.expiresAt;
-    if (
-      isStale(
-        { publishedAt, firstSeenAt: now, expiresAt },
-        now,
-      )
-    ) {
+    if (isStale({ publishedAt, firstSeenAt: now, expiresAt }, now)) {
       continue;
     }
     const title = item.title.trim();
     if (!title) continue;
-    const existing = findDealByCanonical(canonical);
+    const existing = await findDealByCanonical(canonical);
     if (existing && existing.sourceId !== loaded.sourceId) {
       if (loaded.sourceId === "epic") epicKeep.add(existing.canonicalUrl);
       continue;
     }
     const category = classify(title, loaded.sourceId);
     if (!existing) {
-      insertDeal({
+      await insertDeal({
         canonicalUrl: canonical,
         url: canonical,
         title,
@@ -171,7 +166,7 @@ function applySource(loaded: LoadedSource, roundId: number, now: number): number
       });
       inserted += 1;
     } else {
-      updateDeal(existing.id, {
+      await updateDeal(existing.id, {
         url: canonical,
         title,
         summary: item.summary,
@@ -185,12 +180,12 @@ function applySource(loaded: LoadedSource, roundId: number, now: number): number
   }
 
   if (loaded.sourceId === "epic") {
-    for (const deal of listDeals()) {
-      if (deal.sourceId === "epic" && !epicKeep.has(deal.canonicalUrl)) deleteDeal(deal.id);
+    for (const deal of await listDeals()) {
+      if (deal.sourceId === "epic" && !epicKeep.has(deal.canonicalUrl)) await deleteDeal(deal.id);
     }
   }
 
-  insertSourceRun({
+  await insertSourceRun({
     roundId,
     sourceId: loaded.sourceId,
     ok: true,
@@ -204,8 +199,8 @@ function applySource(loaded: LoadedSource, roundId: number, now: number): number
   return inserted;
 }
 
-function purgeStale(now: number): void {
-  for (const deal of listDeals()) {
+async function purgeStale(now: number): Promise<void> {
+  for (const deal of await listDeals()) {
     if (
       isStale(
         {
@@ -216,7 +211,7 @@ function purgeStale(now: number): void {
         now,
       )
     ) {
-      deleteDeal(deal.id);
+      await deleteDeal(deal.id);
     }
   }
 }
@@ -236,7 +231,7 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
 
   try {
   if (options.trigger === "manual") {
-    const last = getMeta("last_manual_at");
+    const last = await getMeta("last_manual_at");
     if (last && now - Number(last) < cooldownMs) {
       throw new RefreshRejected(
         "COOLDOWN",
@@ -244,7 +239,7 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
         cooldownMs - (now - Number(last)),
       );
     }
-    setMeta("last_manual_at", String(now));
+    await setMeta("last_manual_at", String(now));
   }
     logEvent("round_start", { trigger: options.trigger, sources: listSources().length });
     const loaded = await fetchAll({
@@ -252,17 +247,17 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
       timeoutMs: options.timeoutMs ?? SOURCE_TIMEOUT_MS,
       fetchImpl: options.fetchImpl ?? fetch,
     });
-    beginImmediate();
+    await beginImmediate();
     let roundId = 0;
     try {
-      roundId = insertRound(options.trigger, now);
+      roundId = await insertRound(options.trigger, now);
       let totalInserted = 0;
-      for (const source of loaded) totalInserted += applySource(source, roundId, now);
-      purgeStale(now);
+      for (const source of loaded) totalInserted += await applySource(source, roundId, now);
+      await purgeStale(now);
       const okCount = loaded.filter((source) => source.ok).length;
       const status = okCount === loaded.length ? "success" : okCount === 0 ? "failed" : "partial";
-      finishRound(roundId, Date.now(), status);
-      commit();
+      await finishRound(roundId, Date.now(), status);
+      await commit();
       logEvent("round_finished", {
         roundId,
         trigger: options.trigger,
@@ -271,7 +266,7 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
         totalSources: loaded.length,
         inserted: totalInserted,
       });
-      for (const run of listSourceRuns(roundId)) {
+      for (const run of await listSourceRuns(roundId)) {
         logEvent("source_round", {
           roundId,
           sourceId: run.sourceId,
@@ -288,7 +283,7 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
       }
     } catch (error) {
       try {
-        rollback();
+        await rollback();
       } catch {
         // Already rolled back or never opened.
       }
@@ -298,7 +293,7 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
   } finally {
     releaseRefreshLock();
   }
-  const board = getBoardState(now);
+  const board = await getBoardState(now);
   try {
     writeDealSnapshot(board);
   } catch (error) {

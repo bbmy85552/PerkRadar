@@ -19,36 +19,34 @@
 对外文字用 `PerkRadar`；下列运行标识保持不变，避免改名导致本机状态丢失：
 
 - Compose 项目名 `daily-free-info`、容器名、镜像 tag `daily-free-info:local`、命令里的 `-p daily-free-info`；
-- 卷 `./data`、`deals.db` 及 WAL/SHM 文件、SQLite 表名与列名、`SOURCE_DEFS` 的 id、端口 38471；
+- PostgreSQL 表名与列名、`SOURCE_DEFS` 的 id、端口 38471、`DATABASE_URL` / `CRON_SECRET` 环境变量名；
 - 浏览器 `localStorage` 键 `daily-deals-personal-v1` 与 `{ claimed, favorites }` JSON 形状。
 
 判据：改 Compose 项目名会新建一套容器与网络，改收藏键或表结构会让用户本机收藏、已领与现有库不兼容。品牌改名不构成迁移这些状态的理由。
 
 ## 3. 许可与第三方声明
 
-当前齐全：`LICENSE`（MIT）全文、`package.json` 的 `license` 字段、README 许可段落、[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)（生产依赖逐项列名称、版本、许可证、上游地址；开发依赖单列「仅构建期，不随镜像分发」）。`node:sqlite` 是 Node 内置模块，不单独引入第三方许可。
+当前齐全：`LICENSE`（MIT）全文、`package.json` 的 `license` 字段、README 许可段落、[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)（生产依赖逐项列名称、版本、许可证、上游地址；开发依赖单列「仅构建期，不随镜像分发」）。
 
 判据：README、`package.json`、`LICENSE` 三处口径一致；`THIRD_PARTY_NOTICES.md` 与 `package-lock.json` 的生产依赖对得上。内容来自第三方站点，其使用条件不受本仓库代码许可覆盖。
 
 ## 4. 仓库清洁与忽略规则
 
-`.gitignore` 排除 `/data/`、`*.db*`、`.env*`、`.next/`、`*.tar.gz`、`/deployment-backups/`、`/reports/`、`/snapshots/`、`*.bak`、日志、快照产物与 `/.workbuddy/`。`.dockerignore` 排除 `deployment-backups/`、`*.tar.gz`、`docs/`、根目录 `*.md`、`scripts/`、`AGENTS.md`、`tests/`、`snapshots/` 等；镜像只带构建必需项（`src/`、`public/`、`package*.json`、`next.config.mjs`、`tsconfig.json`、`postcss.config.mjs`、`eslint.config.mjs`、`components.json`），并以 `node`（uid 1000）非 root 运行。
+`.gitignore` 排除 `/data/`、`*.db*`、`.env*`（保留 `.env.example`）、`.secrets/`、`.next/`、`*.tar.gz`、`/deployment-backups/`、`/reports/`、`/snapshots/`、`*.bak`、日志、快照产物，以及本地工具元数据目录。`.dockerignore` 排除 `deployment-backups/`、`*.tar.gz`、`docs/`、根目录 `*.md`、`scripts/`、`AGENTS.md`、`tests/`、`snapshots/`、`.secrets/` 等；镜像只带构建必需项（`src/`、`public/`、`package*.json`、`next.config.mjs`、`tsconfig.json`、`postcss.config.mjs`、`eslint.config.mjs`、`components.json`），并以 `node`（uid 1000）非 root 运行。
 
 `tsconfig.json` 与 `eslint.config.mjs` 都排除 `deployment-backups/`：那里有旧的 `next.config.ts`，会被 `include: **/*.ts` 扫到。部署包应保持为 tar，不展开到项目树里。
 
-根目录的 4 个 `tar.gz` 与 `deployment-backups/` 目前仍在工作区，已被 `.gitignore` / `.dockerignore` 排除、git 未跟踪。**是否移走归档由维护者决定**；本文不替维护者做这个决定，也不把它记为已完成或待办。
-
-判据：`git ls-files` 不含数据库与 WAL/SHM、`*.tar.gz`、`deployment-backups/`、`reports/`、`*.bak`、快照产物；`COPY . .` 后的镜像里没有 tar 包与备份目录；全新克隆里没有 `./data`。凭证扫描（`token` / `key` / `password` / `Bearer` / 绝对路径 / `.env*`）是每次提交前的固定检查项。
+判据：`git ls-files` 不含数据库与 WAL/SHM、`*.tar.gz`、`deployment-backups/`、`reports/`、`*.bak`、快照产物；`COPY . .` 后的镜像里没有 tar 包与备份目录；全新克隆里没有 `./data`。凭证扫描由 [.github/workflows/secret-scan.yml](../.github/workflows/secret-scan.yml) 在 push、PR 与每日定时执行（gitleaks 全历史扫描），不依赖人工记忆。
 
 ## 5. 对外说明与文档
 
-README 首屏明确：定位是「多来源优惠线索聚合」，不是逐条认证的领取平台；条目只代表 feed 里有这条，不代表活动仍有效、条件已核实或账户里真有额度。并写明 7 个来源及其形态、关键词分类会误判、闲聊 / 求购 / 抽奖 / 推广照常收录但「其他」在正式页默认隐藏、除 Epic 的当前免费促销外 `expires_at` 为空、进程内 2 小时调度会漏轮、`ok: true` 只证明能读库、默认 loopback、上传 GitHub ≠ 已部署。
+README 首屏明确：定位是「多来源优惠线索聚合」，不是逐条认证的领取平台；条目只代表 feed 里有这条，不代表活动仍有效、条件已核实或账户里真有额度。并写明 7 个来源及其形态、关键词分类会误判、闲聊 / 求购 / 抽奖 / 推广照常收录但「其他」在正式页默认隐藏、除 Epic 的当前免费促销外 `expires_at` 为空、默认不在进程内调度而由外部每 2 小时触发、错过的轮次不会补抓、`ok: true` 只证明能读库、默认 loopback、上传 GitHub ≠ 已部署。
 
 界面文案：顶部只有品牌和「立即刷新」；搜索、排序、来源、分类、收藏、运行状态与逐源结果在左侧状态区和提示区；「信息列表」标题行右侧是「查看全部线索」与「只看新增」两个开关，并显示可见条数与「已隐藏 N 条「其他」线索」；卡片只保留标题、收藏文字按钮、摘要框、原文信息、标签、「打开原文」与「标记已领」。浅色底、`RGB(20,148,130)` 小面积强调，未实现深色模式，系统字体、不加载外部字体或 CDN；正式页与本地 dev 预览 `/demo` 共用 `src/components/deal-board.css`，`/demo` 是 7 条示例的设计预览（1 条「其他」默认隐藏，「只看新增」仍为 3 条），生产镜像的构建结果只有 `/`、`/_not-found` 和三个 API，不含 `/demo`。页面持续可见地说明条目来自公开订阅源、只是线索、未核实有效性 / 条件 / 能否领取。客户端 `src/lib/board-view.ts` 校验接口响应与 SSR 快照；本地状态写入失败、轮询失败、空库、筛选为空，以及刷新 429 / 断网 / 畸形响应各有区分提示。
 
 正式页「全部」视图默认隐藏分类为「其他」的条目：显式选「其他」分类或「我的收藏」时不隐藏，搜索仍受默认隐藏影响（结果为空会提示打开开关），重置回默认隐藏。「查看全部线索」用独立 `localStorage` 键 `daily-deals-show-all-v1` 记住选择、监听 `storage` 事件跨标签同步、刷新后保留；`daily-deals-personal-v1` 与 `{ claimed, favorites }` 形状不变。本地 dev 预览 `/demo` 的同类开关只在当前页面内存生效、刷新重置。隐藏只作用于展示，不改收录规则、分类规则或数据库。
 
-界面重构的测试报告见 [docs/PERKRADAR_UI_REFACTOR_TEST_REPORT.doc.md](PERKRADAR_UI_REFACTOR_TEST_REPORT.doc.md)（配套 .docx 由 IDE 生成），验收日志见 [reports/ui-refactor-2026-11-09.log](../reports/ui-refactor-2026-11-09.log)、[reports/browser-adversarial-2026-11-09.log](../reports/browser-adversarial-2026-11-09.log) 与 [reports/default-hide-other-2026-11-09.log](../reports/default-hide-other-2026-11-09.log)；`npm test`、`npm run lint`、`npx --no-install tsc --noEmit`、`git diff --check` 通过，1280 桌面 / 390 手机预览无控制台报错、无失败请求、无关键视觉缺陷（左栏文字重叠已修），390px 无横向溢出；默认隐藏、查看全部线索开关、只看新增组合、显式选「其他」/「我的收藏」、重置、刷新后开关保留等主流程均通过。测试项数以 `npm test` 输出为准。
+界面验收的判据写在 [CONTRIBUTING.md](../CONTRIBUTING.md)「改动流程」与 [DEVELOPMENT.md](DEVELOPMENT.md)「视觉验收」：命令检查用 `npm test` / `npm run lint` / `tsc --noEmit` / `npm run build`，视觉检查覆盖 1440 / 1280 / 390 宽度、控制台报错、失败请求与横向溢出，交互覆盖默认隐藏「其他」、查看全部线索、只看新增组合、显式选分类、重置与刷新后状态保留。单次验收记录属本地产物，不写进公开文档。
 
 维护入口齐全且互相引用一致：[README.md](../README.md)、[DEVELOPMENT.md](DEVELOPMENT.md)、[OPERATIONS.md](OPERATIONS.md)、[DATA_QUALITY.md](DATA_QUALITY.md)、[SOURCES.md](SOURCES.md)、[CONTRIBUTING.md](../CONTRIBUTING.md)、[SECURITY.md](../SECURITY.md)、[CHANGELOG.md](../CHANGELOG.md)、问题模板与 [AGENTS.md](../AGENTS.md)。
 
@@ -57,9 +55,10 @@ README 首屏明确：定位是「多来源优惠线索聚合」，不是逐条�
 ## 6. 持续集成与依赖审计
 
 - `.github/workflows/ci.yml`：固定 Node 22 → `npm ci` → `npm test` → `npm run lint` → `npm run build` → `npm audit --omit=dev --registry=https://registry.npmjs.org`。
-- `.github/workflows/live-sources.yml`：`workflow_dispatch` + `schedule`（cron 用 UTC，`23 4 * * *` 即北京时间 12:23），单独运行、写临时 `DATA_DIR`、设 `DISABLE_SCHEDULER=1`，不进入 PR 必过项。
-- 两个 workflow 都声明 `permissions: contents: read`。
-- `package.json` 声明 `engines.node >=22`，`.nvmrc` 为 22。Next 仍锁 15.5.29、ESLint 仍 9，没有升级大版本。
+- `.github/workflows/live-sources.yml`：`workflow_dispatch` + `schedule`（cron 用 UTC，`23 4 * * *` 即北京时间 12:23），单独运行，写入 GitHub Actions 里的临时 Postgres 服务，不进入 PR 必过项。
+- 三个 workflow 都声明 `permissions: contents: read`。
+- `.github/workflows/secret-scan.yml`：`checkout` 带 `fetch-depth: 0`，安装固定版本并校验 sha256 的 gitleaks CLI，扫描 push / PR / 每日定时的全部可达提交；发现凭据即让检查失败。不用 action 封装，避免它依赖 push 事件的 before/after SHA 在强推后失效。
+- `package.json` 声明 `engines.node >=20`，`.nvmrc` 为 22。Next 仍锁 15.5.29、ESLint 仍 9，没有升级大版本。
 
 依赖审计：生产依赖 `npm audit --omit=dev` 为 0 项；完整 `npm audit` 的告警全部在开发依赖里。CI 已显式指定官方 registry；本机默认 npm 镜像不支持 audit 端点，本地复查要手动加 `--registry=https://registry.npmjs.org`。测试项数以 `npm test` 输出为准，不写进文档。
 
@@ -86,7 +85,7 @@ README 首屏明确：定位是「多来源优惠线索聚合」，不是逐条�
 ## 9. 默认安全与部署边界
 
 - 端口绑定只有 `127.0.0.1:${HOST_PORT:-38471}:38471`，不改 `0.0.0.0`。容器非 root，`./data` 须对 uid 1000 可写，不用 `chmod 777` 绕过。
-- `POST /api/refresh` **没有身份校验**，只依赖同源校验（`sec-fetch-site: cross-site` 拒绝 403、`Origin` 与 `Host` 不一致拒绝 403；不带 `Origin` 的请求放行）、60 秒冷却、每 IP 10 分钟 8 次内存限流（重启清零）、`Content-Length` 上限、单源 25 秒超时与响应体大小上限。
+- `POST /api/refresh` 与 `GET /api/refresh`：配置 `CRON_SECRET` / `REFRESH_SECRET` 后，外部请求必须带 `Authorization: Bearer` 或 `X-Cron-Secret` / `X-Refresh-Secret`，否则 401；同源页面手动刷新仍可用。另有同源校验、60 秒手动冷却、每 IP 10 分钟 8 次内存限流（重启清零）、`Content-Length` 上限、单源 25 秒超时与响应体大小上限。未配置密钥时不要把接口暴露到公网。
 - 客户端 IP 默认忽略 `x-forwarded-for` / `x-real-ip`（一律归 `local`），只有 `TRUST_PROXY_HEADERS=1` 时才信任转发头；只在确有可信反向代理时开启。三个接口都带 `cache-control: no-store`。
 
 判据：把现有端口直接暴露到公网等于开放一个可随意触发外链抓取的接口；如需公网访问，须另行设计认证、TLS、刷新接口鉴权与全局速率限制。详见 [SECURITY.md](../SECURITY.md)。

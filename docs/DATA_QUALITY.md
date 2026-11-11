@@ -4,11 +4,11 @@
 
 | 你看到的 | 它实际表示 | 它不表示 |
 | --- | --- | --- |
-| Docker 健康、`/api/health` 的 `ok: true` | 进程能读 SQLite | 数据新鲜，或条目现在还能领 |
+| Docker 健康、`/api/health` 的 `ok: true` | 进程能读 PostgreSQL | 数据新鲜，或条目现在还能领 |
 | `fetchedAt` / 页面「更新」 | 最近一轮结束的时刻。全失败的一轮也会更新它 | 这一轮七个源都成功 |
 | `sourceHealth.ok` 和 `failures` | 最近一轮各源是成功还是失败 | 更早某一轮的状态 |
 | `deals` 里的一条 | 按下面的规则仍留在库里，并带有抓到的标题和链接 | 已经打开原文、确认活动仍有效 |
-| 其他渠道留存的旧快照 | 写快照那一刻的公开字段 | 本机 SQLite 的当前内容 |
+| 其他渠道留存的旧快照 | 写快照那一刻的公开字段 | 当前 PostgreSQL 里的内容 |
 
 本机 Compose 没有设置 `DEALS_SNAPSHOT_DIR`，快照功能默认不写公开快照。外部渠道若读旧快照，和本机库不是同一份数据。
 
@@ -72,9 +72,9 @@ NodeSeek、小众软件、果核剥壳、异次元是综合 RSS/Atom。落在 7 
 
 ## 调度和「本轮新增」
 
-间隔是 2 小时，实现是进程里的 `setInterval`，不是浏览器计时，也不是系统 cron。Compose 没有设置 `DEALS_SKIP_BOOT`，所以容器起来约 4 秒后先抓一轮；这一轮的 `finally` 里才开始 2 小时循环。因此重启会重新排程：不会接着上次计划的剩余时间，而是尽快再抓一轮，然后从那一轮结束之后再算 2 小时。`next_refresh_at` 会被改写。
+默认不在进程内调度。要更新数据，需要由外部调用方每 2 小时请求一次 `/api/refresh`（带 `CRON_SECRET` 或 `REFRESH_SECRET`）。仓库里的 `vercel.json` 给了一个同样间隔的示例，但不会自动部署。
 
-`DEALS_SKIP_BOOT=1` 会跳过这 4 秒的首轮，马上开始 2 小时循环。当前 `docker-compose.yml` 没有设置它。
+只有显式设置 `ENABLE_SCHEDULER=1` 时，才会使用进程里的 `setInterval`：启动约 4 秒后先抓一轮，这一轮的 `finally` 里才开始 2 小时循环。生产 Docker 和 Vercel 不要打开这个开关。`DEALS_SKIP_BOOT=1` 只在已经 opt-in 进程内调度时有意义，会跳过这 4 秒的首轮。没有外部请求或未启用调度时，`next_refresh_at` 通常为 `null`。
 
 进程不在跑就不会抓。笔记本休眠、Docker 没开、容器 `stop` 或崩溃，都停在原地。代码里没有补轮队列，不会按停机时长把错过的每一档都抓一遍。进程恢复后，下一次定时器触发只再跑一轮。Mac 休眠时定时器究竟何时补响，没有在用户机器上实测；能确定的是没有逐档补抓。
 
@@ -108,7 +108,7 @@ NodeSeek、小众软件、果核剥壳、异次元是综合 RSS/Atom。落在 7 
 
 **正式页「全部」视图默认隐藏分类为「其他」的条目**：结果标题行显示可见条数与「已隐藏 N 条「其他」线索」，并提供「查看全部线索」开关；显式选「其他」分类或「我的收藏」时不隐藏，搜索仍受默认隐藏影响（结果为空会提示打开开关），重置回默认隐藏。「查看全部线索」的展示偏好用独立 `localStorage` 键 `daily-deals-show-all-v1` 记住、监听 `storage` 事件跨标签同步、刷新后保留；本地 dev 预览 `/demo` 的 7 条示例默认隐藏 1 条「其他」，开关只在当前页面内存生效、刷新重置。**这只是展示过滤，不改收录规则、分类规则或数据库**：`src/lib/filter-deals.ts` 的新增可选参数 `includeOther` 省略时沿用原有筛选行为。
 
-是否在入库时收紧关键词、从源头少收这类闲聊帖，是**尚未实施的后续选项**：它会改变 7 天窗口下的收录语义与在架条数，需同步改 `src/lib/classify.ts`、对应测试与 [SOURCES.md](SOURCES.md) 的收录说明；当前收录规则保持不变。默认隐藏的行为与这条后续选项同时记录在 [README.md](../README.md) 与 [OPEN_SOURCE_CHECKLIST.md](OPEN_SOURCE_CHECKLIST.md)，验收日志见 [reports/default-hide-other-2026-11-09.log](../reports/default-hide-other-2026-11-09.log)。每轮人工验收时，对分到「免费白嫖」「限免」「其他」但标题像闲聊或抽奖的条目要打开原文核对，见下文清单。
+是否在入库时收紧关键词、从源头少收这类闲聊帖，是**尚未实施的后续选项**：它会改变 7 天窗口下的收录语义与在架条数，需同步改 `src/lib/classify.ts`、对应测试与 [SOURCES.md](SOURCES.md) 的收录说明；当前收录规则保持不变。默认隐藏的行为与这条后续选项同时记录在 [README.md](../README.md) 与 [OPEN_SOURCE_CHECKLIST.md](OPEN_SOURCE_CHECKLIST.md)。每轮人工验收时，对分到「免费白嫖」「限免」「其他」但标题像闲聊或抽奖的条目要打开原文核对，见下文清单。
 
 ## 每轮验收清单
 

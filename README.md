@@ -1,22 +1,29 @@
 # PerkRadar
 
-PerkRadar 是一个本地运行的优惠线索聚合器。它定时读取固定的公开 RSS、Atom、JSON 和 Markdown 来源，把标题、原文链接和短摘要整理到一个轻量的 SQLite 数据库，再用网页看板帮助你搜索、筛选、收藏和标记已领。
+PerkRadar 是一个本地运行的优惠线索聚合器。它读取固定的公开 RSS、Atom、JSON 和 Markdown 来源，把标题、原文链接和短摘要整理到 PostgreSQL，再用网页看板帮助你搜索、筛选、收藏和标记已领。默认不会在进程内自动抓取，需要由外部定时器请求刷新接口。
 
 它的定位是“先把线索集中起来”，不是逐条认证的领取平台。页面里的一条记录只代表对应来源曾返回过这条内容，不代表活动仍然有效、领取条件已经核实、账户一定有额度，也不代表 PerkRadar 已经打开原文逐条确认。使用时请把原文页面作为最终依据。
+
+## 推荐安装方式：交给 Personal Agent 部署
+
+本项目最推荐的安装方式是：将仓库链接交给 muse、grokbot、hark 等 Personal Agent（个人智能体），让它协助在你自己的云空间完成部署，并配置每小时或每两小时推送一次新增优惠资讯。这样无需反复打开网页，也能及时掌握最新优惠线索。
+
+部署、定时任务与消息推送需由所选 Personal Agent 根据其能力配置。PerkRadar 默认由外部每 2 小时触发一次抓取，本身不发送通知；推送内容以最近一次成功抓取的结果为准。
 
 ## 快速开始
 
 ### 环境要求
 
-- Node.js 22 或更高版本
+- Node.js 20 或更高版本（CI 与 Docker 镜像使用 Node.js 22）
 - npm
-- 如果使用 Docker，需要 Docker Desktop 或兼容 Docker Compose 的环境
+- 可访问的 PostgreSQL 数据库（通过 `DATABASE_URL` 连接）
+- 如果使用 Docker，需要 Docker Desktop 或兼容 Docker Compose 的环境（Compose v2.24 或更高版本）
 
-Node.js 22 是必需条件，因为项目使用了 Node 内置的 `node:sqlite`。依赖版本锁在 `package-lock.json` 中。
+依赖版本锁在 `package-lock.json` 中。复制 [`.env.example`](.env.example) 为本地 `.env`，填入 `DATABASE_URL` 和 `CRON_SECRET`，不要把真实凭证提交到 Git。
 
 ### 用 Docker 运行
 
-这是推荐的本机运行方式。它会构建生产镜像、启动容器，并把 SQLite 数据保存在项目目录的 `./data` 中。
+这是推荐的本机运行方式。它会构建生产镜像并启动容器。请先在环境或 `.env` 中提供 `DATABASE_URL`（以及用于外部刷新的 `CRON_SECRET`）。进程内调度器默认关闭。根目录 `.env` 是可选的（未配置数据库和密钥时需另行注入）；未配置 Jina API Key 时无需创建该变量。需要鉴权时可通过 `JINA_API_KEY` 配置，也可设置 `JINA_API_KEY_FILE` 指向容器内可读取的密钥文件。`.secrets/` 不会复制进镜像，文件方式需要由运行环境单独挂载到容器。
 
 ```bash
 docker compose -p daily-free-info up -d --build
@@ -43,7 +50,7 @@ npm ci
 npm run dev
 ```
 
-开发服务器监听 `0.0.0.0:38471`，打开 [http://127.0.0.1:38471/](http://127.0.0.1:38471/)。开发模式默认使用项目目录下的 `data/deals.db`，首次运行会从真实来源抓取，不会灌入示例优惠。
+开发服务器监听 `0.0.0.0:38471`，打开 [http://127.0.0.1:38471/](http://127.0.0.1:38471/)。开发模式同样需要 `DATABASE_URL`，首次启动不会自动抓取；需要时在页面点「立即刷新」，或按下述方式用带密钥的请求触发一轮抓取。不会灌入示例优惠。
 
 本地设计预览页 `/demo` 只在开发环境提供，用于查看界面布局和交互示例：
 
@@ -68,7 +75,7 @@ npm run dev
 - `daily-deals-personal-v1`：`{ "claimed": string[], "favorites": string[] }`
 - `daily-deals-show-all-v1`：是否显示“其他”线索
 
-这些状态不会上传到服务端，也不会写入 SQLite。清除浏览器站点数据会清除它们。
+这些状态不会上传到服务端，也不会写入数据库。清除浏览器站点数据会清除它们。
 
 ## 数据来源与处理方式
 
@@ -105,16 +112,16 @@ Epic 条目的 `expiresAt` 来自当前免费促销的结束时间。其他来�
 
 ## 刷新和新鲜度
 
-服务启动约 4 秒后执行一轮抓取，之后每 2 小时执行一轮。调度器在 Node 进程内运行，不依赖浏览器计时器或系统 cron。
+默认情况下，进程**不会**自己定时抓取。需要由外部调用方（本机 cron、GitHub Actions，或以后的 Vercel Cron）请求刷新接口，才会跑一轮。只有显式设置 `ENABLE_SCHEDULER=1` 时，才会在进程内于启动约 4 秒后抓一轮、之后每 2 小时再抓一轮；生产 Docker 和 Vercel 不要打开这个开关。
 
-- 停止进程、关闭 Docker 或让电脑休眠时，抓取会停止
-- 恢复运行后不会补抓停机期间错过的每一轮，只会继续执行下一轮
-- 手动刷新和定时刷新共用进程内锁，同一时间只允许一轮运行
-- 手动刷新有 60 秒冷却，并限制同一 IP 在 10 分钟内最多触发 8 次
+- 没有外部定时请求时，数据不会更新
+- 错过的轮次不会补抓，下一次外部请求只会再跑一轮
+- 手动刷新和外部刷新共用进程内锁，同一时间只允许一轮运行（多个无服务器实例之间这把锁不共享）
+- 页面上的手动刷新有 60 秒冷却，并限制同一 IP 在 10 分钟内最多触发 8 次；带密钥的外部刷新不受这两项限制
 - 最近一轮超过 2.5 小时会标记为过时，超过 4 小时会标记为严重过时
 - 程序不会发送邮件、聊天消息或系统通知
 
-`/api/health` 的 `ok: true` 只表示进程能够读取 SQLite，不表示数据新鲜，更不表示每条线索都有效。判断数据状态时，应同时查看 `sourceHealth`、`failures`、`fetchedAt`、`freshness` 和 `anomalies`。
+`/api/health` 的 `ok: true` 只表示进程能够读取 PostgreSQL，不表示数据新鲜，更不表示每条线索都有效。判断数据状态时，应同时查看 `sourceHealth`、`failures`、`fetchedAt`、`freshness` 和 `anomalies`。
 
 ## API
 
@@ -146,13 +153,33 @@ curl -sS http://127.0.0.1:38471/api/health
 curl -sS http://127.0.0.1:38471/api/deals
 ```
 
-### `POST /api/refresh`
+### `POST /api/refresh` 与 `GET /api/refresh`
 
-触发一次手动抓取。请求不需要 body。
+触发一次抓取。请求不需要 body。
+
+页面上的「立即刷新」走同源 `POST`，仍然受 60 秒冷却和每 IP 限流约束。外部定时器应携带密钥，走不受手动冷却限制的调度路径：
 
 ```bash
-curl -sS -X POST http://127.0.0.1:38471/api/refresh
+# Authorization Bearer（推荐，Vercel Cron 也会带这个头）
+curl -sS -X POST http://127.0.0.1:38471/api/refresh \
+  -H "Authorization: Bearer $CRON_SECRET"
+
+# 也可以用 X-Cron-Secret 或 X-Refresh-Secret
+curl -sS -X POST http://127.0.0.1:38471/api/refresh \
+  -H "X-Cron-Secret: $CRON_SECRET"
+
+# Vercel Cron 默认发 GET，同样需要密钥
+curl -sS http://127.0.0.1:38471/api/refresh \
+  -H "Authorization: Bearer $CRON_SECRET"
 ```
+
+本机 crontab 示例（每 2 小时，把密钥放在环境变量里，不要把真实密钥提交到仓库）：
+
+```cron
+0 */2 * * * curl -fsS -X POST http://127.0.0.1:38471/api/refresh -H "Authorization: Bearer $CRON_SECRET"
+```
+
+仓库里的 `vercel.json` 提供了每 2 小时调用 `/api/refresh` 的 Cron 示例；真正部署到 Vercel 时还需要配置 `DATABASE_URL` 和 `CRON_SECRET`，见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
 
 常见响应：
 
@@ -160,12 +187,13 @@ curl -sS -X POST http://127.0.0.1:38471/api/refresh
 | --- | --- |
 | `200` | 抓取完成并返回最新看板数据 |
 | `400` | 请求体超过允许大小 |
+| `401` | 缺少或错误的刷新密钥，或密钥已配置时来自公网的未认证请求 |
 | `403` | 跨站刷新请求被拒绝 |
 | `409` | 已有一轮刷新正在运行 |
-| `429` | 仍在冷却期或触发频率限制 |
+| `429` | 仍在冷却期或触发频率限制（仅手动刷新） |
 | `500` | 未分类的刷新错误 |
 
-这个接口没有登录、token 或 API key 认证。当前同源检查和限流只适合本机使用，不能直接把端口暴露到公网。公网部署前必须补充反向代理、TLS、身份认证、刷新接口访问控制和全局速率限制，相关边界见 [SECURITY.md](SECURITY.md)。
+配置了 `CRON_SECRET` 或 `REFRESH_SECRET` 之后，未带密钥的公网刷新会被拒绝。同源的页面按钮仍然可用。不要在未设置密钥的情况下把刷新接口暴露到公网。相关边界见 [SECURITY.md](SECURITY.md)。
 
 ## 项目结构
 
@@ -174,7 +202,7 @@ src/
 ├── app/
 │   ├── api/deals/       # 当前条目与看板数据
 │   ├── api/health/      # 健康和新鲜度状态
-│   ├── api/refresh/     # 手动刷新
+│   ├── api/refresh/     # 手动或外部触发刷新
 │   ├── demo/            # 仅开发环境的设计预览
 │   └── page.tsx         # 正式首页
 ├── components/
@@ -182,9 +210,9 @@ src/
 │   └── deal-board.css   # 正式页与 demo 共用样式
 ├── lib/
 │   ├── parse/           # 各来源解析器
-│   ├── db.ts            # SQLite 读写
+│   ├── db.ts            # PostgreSQL 读写
 │   ├── refresh.ts       # 抓取编排、锁和失败隔离
-│   ├── scheduler.ts     # 启动首轮和定时刷新
+│   ├── scheduler.ts     # 可选的进程内调度（默认关闭）
 │   ├── classify.ts      # 标题关键词分类
 │   ├── filter-deals.ts  # 页面筛选和排序
 │   ├── board-view.ts    # 客户端响应校验
@@ -193,7 +221,7 @@ src/
 tests/                   # 离线测试和脱敏夹具
 docs/                    # 开发、运维、数据质量和来源说明
 scripts/                 # 手动抓取报告等维护脚本
-data/                    # 本机 SQLite 数据，不提交到 Git
+.env                      # 本地密钥与 DATABASE_URL，不提交到 Git
 ```
 
 ## 开发与验证
@@ -209,7 +237,7 @@ npm run build
 git diff --check
 ```
 
-测试使用 `tests/fixtures/` 和合成样本，不访问外网，也不写入生产目录 `./data`。`npm run report` 会访问真实来源并写入 `DATA_DIR` 指向的数据库，只应在明确需要实时抓取时使用；不要把它指向正在使用的生产库。
+测试使用 `tests/fixtures/` 和合成样本，在进程内的 PGlite（嵌入式 PostgreSQL）上运行，不访问外网，也不写入生产数据库。`npm run report` 会访问真实来源并写入 `DATABASE_URL` 指向的数据库，只应在明确需要实时抓取时使用；不要把它指向正在使用的生产库。
 
 GitHub Actions 的常规 CI 会运行离线测试、Lint、生产构建和生产依赖审计。实时来源探测是单独的定时工作流，不作为 Pull Request 的必过检查，因为上游故障、反爬挑战或 feed 结构变化不应阻断无关代码的合并。
 
@@ -227,9 +255,9 @@ docker compose -p daily-free-info stop
 docker compose -p daily-free-info start
 ```
 
-SQLite 位于 `./data/deals.db`，WAL 模式下还可能存在 `deals.db-wal` 和 `deals.db-shm`。不要删除 `./data`，也不要只复制 `deals.db` 文件来做正在运行中的数据库备份；一致性备份和恢复步骤见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
+数据保存在 `DATABASE_URL` 指向的 PostgreSQL 中。备份请使用 `pg_dump`，不要把连接字符串或密码写进仓库；步骤见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
 
-生产容器以非 root 的 `node` 用户运行，宿主的 `./data` 必须对容器内 uid 1000 可写。不要用 `chmod 777` 解决权限问题。
+生产容器以非 root 的 `node` 用户运行。不要把数据库凭证写进镜像，通过环境变量或 Compose 的 `.env` 注入。
 
 日志统一使用 `[deals]` 前缀的单行 JSON，记录轮次、来源成功与失败、耗时和失败分类，不记录标题正文、Cookie、请求头或浏览器个人状态。结构化日志字段见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
@@ -250,3 +278,7 @@ SQLite 位于 `./data/deals.db`，WAL 模式下还可能存在 `deals.db-wal` �
 ## 许可证
 
 本项目采用 [MIT License](LICENSE)。你可以自由使用、修改和商用，但需要保留版权与许可证声明。第三方依赖的许可义务见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。来源站点的内容和使用条件不由本仓库的 MIT 许可证覆盖。
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=luobinger/PerkRadar&type=Date)](https://star-history.com/#luobinger/PerkRadar&Date)
